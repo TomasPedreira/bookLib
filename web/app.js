@@ -1,0 +1,595 @@
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+const state = { books: [], stats: {}, filter: 'all', view: 'inicio', selected: null, work: null, editionOffset: 0, editionTotal: 0, bookEdit: null, progressEdit: null, pendingEdition: null, importing: false, pendingProgress: new Set(), recommendationGenres: [], recommendationLanguages: [], recommendations: [], homeRecommendations: [], viewedWorks: [], booksReady: false, homeStale: true, browseLoaded: false };
+const labels = { want: 'Want to read', reading: 'Reading', paused: 'Paused', completed: 'Finished', abandoned: 'Abandoned' };
+const topicGroups = [
+  {label:'Lives & society', topics:{biography:'Biography',memoir:'Memoir',autobiography:'Autobiography',history:'History',politics:'Politics',philosophy:'Philosophy',psychology:'Psychology',religion:'Religion'}},
+  {label:'Fiction & stories', topics:{fiction:'Fiction',classics:'Classics',fantasy:'Fantasy',science_fiction:'Sci-fi',romance:'Romance',mystery:'Mystery',thriller:'Thriller',crime:'Crime',horror:'Horror',historical_fiction:'Historical fiction',dystopian:'Dystopian',adventure:'Adventure',short_stories:'Short stories',literary_fiction:'Literary fiction',humor:'Humor'}},
+  {label:'Knowledge & interests', topics:{nonfiction:'Nonfiction',science:'Science',technology:'Technology',business:'Business',finance:'Finance',self_help:'Self-help',health:'Health',cooking:'Cooking',art:'Art',travel:'Travel',sports:'Sports',education:'Education',music:'Music'}},
+  {label:'Readers & formats', topics:{young_adult:'Young adult',children:'Children’s',comics:'Comics',graphic_novels:'Graphic novels',manga:'Manga',poetry:'Poetry'}}
+];
+const popularTopics = Object.assign({}, ...topicGroups.map(group => group.topics));
+const topicSearchAliases = {biography:'biografia',memoir:'memorias memórias',autobiography:'autobiografia',nonfiction:'nao ficcao não ficção',science_fiction:'ficcao cientifica ficção científica',graphic_novels:'novelas graficas novelas gráficas'};
+const languages = {eng:'English',por:'Portuguese',spa:'Spanish',fre:'French',ger:'German',ita:'Italian'};
+let toastTimer, browseSearchTimer, isbnSerial = 0, recommendationSerial = 0, homeRecommendationSerial = 0, browseDialogSerial = 0, browseDialogEditionSerial = 0;
+
+const topicLabel = key => popularTopics[key] || key.replaceAll('_', ' ');
+
+function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+const apiErrorTranslations = {
+  'Erro na base de dados': 'Database error',
+  'Registo não encontrado': 'Entry not found',
+  'Catálogo temporariamente indisponível': 'Catalog temporarily unavailable',
+  'O catálogo não respondeu à pesquisa': 'The catalog did not respond to the search',
+  'Resposta inválida do catálogo': 'Invalid catalog response',
+  'Pesquisa entre 2 e 120 caracteres': 'Search must contain 2 to 120 characters',
+  'Identificador de obra inválido': 'Invalid work ID',
+  'Indica o título': 'Enter a title',
+  'Título ou autor demasiado longo': 'Title or author is too long',
+  'Número de páginas inválido': 'Invalid page count',
+  'Classificação inválida': 'Invalid rating',
+  'Identificador de edição inválido': 'Invalid edition ID',
+  'ISBN inválido': 'Enter a valid ISBN-10 or ISBN-13',
+  'Edição inválida no catálogo': 'Invalid edition data from the catalog',
+  'Edição não encontrada no catálogo': 'No edition found for this ISBN',
+  'Campo do livro demasiado longo': 'Book field is too long',
+  'URL da capa inválido': 'Invalid cover URL',
+  'Texto demasiado longo': 'Text is too long',
+  'Esta edição já está na biblioteca': 'This edition is already in your library',
+  'Unidade inválida': 'Invalid progress unit',
+  'Indica o número de páginas ou usa percentagem': 'Enter a page count or use percentage progress',
+  'Já existe uma leitura em curso': 'A reading session is already in progress',
+  'Estado inválido': 'Invalid status',
+  'Esta leitura já terminou; inicia uma releitura': 'This reading session has ended; start a new one',
+  'Só podes alterar a leitura mais recente': 'You can only change the latest reading session',
+  'Data inválida': 'Invalid date',
+  'Esta leitura já terminou': 'This reading session has ended',
+  'Versão de ficheiro não suportada': 'Unsupported backup version',
+  'Ficheiro demasiado grande': 'Backup file is too large',
+  'Ficheiro contém um livro sem título': 'Backup contains a book without a title',
+  'Dados inválidos no ficheiro': 'Backup contains invalid data',
+  'Escolhe pelo menos um género': 'Choose at least one genre'
+};
+function apiErrorMessage(message, status) {
+  if (!message) return `Error ${status}`;
+  const range = /^Indica um valor entre 0 e (\d+)$/.exec(message);
+  return range ? `Enter a value between 0 and ${range[1]}` : apiErrorTranslations[message] || message;
+}
+function safeImage(value) { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) ? escapeHtml(u.href) : ''; } catch { return ''; } }
+function languageLabel(value) {
+  if (!value) return '';
+  const names = {eng:'English',en:'English',por:'Portuguese',pt:'Portuguese','português':'Portuguese',spa:'Spanish',es:'Spanish','español':'Spanish',fre:'French',fra:'French',fr:'French','français':'French',ger:'German',deu:'German',de:'German','deutsch':'German',ita:'Italian',it:'Italian','italiano':'Italian'};
+  return names[String(value).trim().toLocaleLowerCase('en')] || value;
+}
+function dateLabel(value) { if (!value) return ''; const d = new Date(String(value).replace(' ', 'T')); return Number.isNaN(d.getTime()) ? value : new Intl.DateTimeFormat('en-GB', {day:'numeric',month:'short',year:'numeric'}).format(d); }
+function today() { return new Date().toLocaleDateString('sv-SE'); }
+function notify(message, error = false) { const el = $('#toast'); el.textContent = message; el.className = `toast show${error ? ' error' : ''}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.className = 'toast', 3500); }
+async function api(path, options = {}) {
+  const res = await fetch(path, {headers: {'Content-Type':'application/json'}, ...options});
+  let data; try { data = await res.json(); } catch { data = null; }
+  if (!res.ok) throw new Error(apiErrorMessage(data?.error, res.status));
+  return data;
+}
+function jsonRequest(method, body) { return {method, body: JSON.stringify(body)}; }
+function coverHtml(book, cls = '') { const src = safeImage(book.cover_url); return `<div class="${cls || 'cover-wrap'}">${src ? `<img src="${src}" alt="Cover of ${escapeHtml(book.title)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.hidden=false"><span class="cover-fallback" hidden>${escapeHtml(book.title)}</span>` : `<span class="cover-fallback">${escapeHtml(book.title)}</span>`}</div>`; }
+function progressPct(book, reading) { if (!reading) return 0; const max = reading.unit === 'percent' ? 100 : book.page_count; return max ? Math.min(100, Math.round(100 * reading.current_value / max)) : 0; }
+function readingText(book, reading) { return reading.unit === 'percent' ? `${reading.current_value}%` : `${reading.current_value} / ${book.page_count || '?'} pages`; }
+function empty(title, text, action = '') { return `<div class="empty-state"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p>${action}</div>`; }
+
+async function refresh() {
+  const [books, stats] = await Promise.all([api('/api/books'), api('/api/stats')]);
+  const profile = items => items.map(({book}) => [book.id, book.work_id, book.rating, book.topics, book.status]);
+  const oldProfile = JSON.stringify(profile(state.books));
+  state.books = books; state.stats = stats;
+  state.booksReady = true;
+  if (oldProfile !== JSON.stringify(profile(books))) state.homeStale = true;
+  renderDashboard(); renderLibrary(); renderRecommendations(); renderHomeRecommendations();
+  if (state.view === 'inicio' && state.homeStale) loadHomeRecommendations();
+}
+
+function initRecommendations() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('booklib-recommendation-filters') || '{}');
+    state.recommendationGenres = (saved.genres || []).filter(value => popularTopics[value]).slice(0, 4);
+    state.recommendationLanguages = (saved.languages || []).filter(value => languages[value]);
+    const history = JSON.parse(localStorage.getItem('booklib-viewed-works') || '[]');
+    state.viewedWorks = Array.isArray(history) ? history.filter(item => /^OL\d{1,12}W$/.test(item.id)).slice(0, 30) : [];
+  } catch { /* Invalid or unavailable local storage: use empty filters. */ }
+  renderRecommendationChoices();
+}
+function recordViewedWork(id, knownGenre = '') {
+  if (!/^OL\d{1,12}W$/.test(id || '')) return;
+  const existing = state.viewedWorks.find(item => item.id === id);
+  const known = popularTopics[knownGenre] ? [knownGenre] : [];
+  const entry = {id, genres:[...new Set([...(existing?.genres || []), ...known])], views:Math.min(5, (existing?.views || 0) + 1)};
+  state.viewedWorks = [entry, ...state.viewedWorks.filter(item => item.id !== id)].slice(0, 30);
+  state.homeStale = true;
+  homeRecommendationSerial++;
+  try { localStorage.setItem('booklib-viewed-works', JSON.stringify(state.viewedWorks)); } catch { /* History still works in this session. */ }
+  if (entry.genres.length) return;
+  api(`/api/catalog/works/${id}/genres`).then(data => {
+    const current = state.viewedWorks.find(item => item.id === id);
+    if (!current) return;
+    current.genres = [...new Set([...current.genres, ...(data.genres || []).filter(value => popularTopics[value])])];
+    try { localStorage.setItem('booklib-viewed-works', JSON.stringify(state.viewedWorks)); } catch { /* Keep in memory. */ }
+    state.homeStale = true;
+  }).catch(() => {});
+}
+function renderRecommendationChoices() {
+  $('#recommend-genres').innerHTML = renderTopicGroups('data-recommend-genre', state.recommendationGenres);
+  filterTopicChoices($('#recommend-topic-search'), $('#recommend-genres'));
+  $('#recommend-languages').innerHTML = Object.entries(languages).map(([key, label]) => `<button type="button" data-recommend-language="${key}" aria-pressed="${state.recommendationLanguages.includes(key)}">${label}</button>`).join('');
+}
+function saveRecommendationChoices() {
+  recommendationSerial++;
+  homeRecommendationSerial++;
+  state.homeStale = true;
+  try { localStorage.setItem('booklib-recommendation-filters', JSON.stringify({genres:state.recommendationGenres,languages:state.recommendationLanguages})); } catch { /* Filters still work in this session. */ }
+  state.recommendations = [];
+  renderRecommendationChoices();
+  $('#recommend-books').innerHTML = '';
+  $('#recommend-message').textContent = 'Filters changed. Update results to refresh the list.';
+}
+function renderRecommendations() {
+  const ownedIds = new Set(state.books.map(item => item.book.work_id).filter(Boolean));
+  const ownedTitles = new Set(state.books.map(item => item.book.title.trim().toLocaleLowerCase()));
+  const items = state.recommendations.filter(item => !ownedIds.has(item.work_id) && !ownedTitles.has(item.title.trim().toLocaleLowerCase()));
+  $('#recommend-books').innerHTML = items.map((item, index) => `<button class="recommend-card" type="button" data-recommend-work="${index}" aria-label="Open ${escapeHtml(item.title)}">${coverHtml(item, 'mini-cover')}<span class="recommend-info"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</span><small>${escapeHtml(item.genre ? topicLabel(item.genre) : item.year || 'Book')}${item.ratings_count >= 5 ? `, ★ ${Number(item.ratings_average).toFixed(1)} (${item.ratings_count})` : ''}</small></span></button>`).join('');
+  state.visibleRecommendations = items;
+}
+function syncBrowseFilters() {
+  const searching = Boolean($('#browse-search').value.trim());
+  const toggle = $('#filter-toggle');
+  toggle.hidden = searching;
+  $('#recommend-controls').hidden = searching || toggle.getAttribute('aria-expanded') !== 'true';
+}
+async function loadRecommendations() {
+  const term = $('#browse-search').value.trim();
+  if (/^(?:\d{13}|\d{9}[\dXx])$/.test(term.replace(/[\s-]/g, ''))) {
+    $('#isbn-query').value = term;
+    return lookupIsbn(term);
+  }
+  showBrowseResults();
+  const serial = ++recommendationSerial;
+  syncBrowseFilters();
+  if (term.length === 1) {
+    state.recommendations = [];
+    renderRecommendations();
+    $('#recommend-message').textContent = 'Enter at least two characters to search.';
+    return;
+  }
+  const button = $('#recommend-load'); button.disabled = true;
+  $('#recommend-message').textContent = term ? 'Searching books…' : 'Finding books…';
+  $('#recommend-books').innerHTML = '';
+  try {
+    const params = new URLSearchParams({genres:state.recommendationGenres.join(','),languages:state.recommendationLanguages.join(',')});
+    const data = await api(term ? `/api/catalog?q=${encodeURIComponent(term)}` : `/api/recommendations?${params}`);
+    if (serial !== recommendationSerial) return;
+    state.recommendations = data.items;
+    renderRecommendations();
+    state.browseLoaded = true;
+    $('#recommend-message').textContent = state.visibleRecommendations.length ? `${state.visibleRecommendations.length} ${term ? 'search results' : 'books'}, Open Library` : term ? 'No books found. Try another title or author.' : 'No books match these filters. Try another genre or fewer languages.';
+  } catch (error) { if (serial === recommendationSerial) { $('#recommend-message').textContent = error.message; notify(error.message, true); } }
+  finally { button.disabled = false; }
+}
+function renderHomeRecommendations() {
+  const owned = new Set(state.books.map(item => item.book.work_id).filter(Boolean));
+  const items = state.homeRecommendations.filter(item => !owned.has(item.work_id)).slice(0, 10);
+  state.visibleHomeRecommendations = items;
+  $('#home-recommend-books').innerHTML = items.map((item, index) => `<article class="home-recommend-card"><button class="home-recommend-main" type="button" data-home-recommend="${index}" aria-label="Open details for ${escapeHtml(item.title)}">${coverHtml(item, 'home-cover')}<strong>${escapeHtml(item.title)}</strong><span>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</span><small>${item.ratings_count >= 5 ? `★ ${Number(item.ratings_average).toFixed(1)}` : 'Popular book'}</small></button><form action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(item.title)}"><input type="hidden" name="i" value="stripbooks"><button class="home-recommend-price" type="submit" aria-label="Search prices for ${escapeHtml(item.title)} on Amazon">Prices</button></form></article>`).join('');
+}
+async function loadHomeRecommendations() {
+  if (!state.booksReady) return;
+  const serial = ++homeRecommendationSerial;
+  state.homeStale = false;
+  $('#home-recommend-message').textContent = 'Finding books…';
+  const workIds = [...new Set([...state.viewedWorks.map(item => item.id), ...state.books.map(item => item.book.work_id).filter(Boolean)])].slice(0, 30);
+  const interests = {};
+  for (const item of state.viewedWorks) for (const genre of item.genres || []) if (popularTopics[genre]) interests[genre] = (interests[genre] || 0) + Math.min(5, item.views || 1);
+  for (const {book} of state.books) {
+    const weight = book.rating == null ? 2 : [0, -6, -3, 1, 3, 5][book.rating] || 0;
+    for (const topic of (book.topics || '').split(',')) if (weight && popularTopics[topic]) interests[topic] = (interests[topic] || 0) + weight;
+  }
+  const params = new URLSearchParams({mode:'home',seen:workIds.join(','),interests:Object.entries(interests).filter(([,count]) => count > 0).map(([genre,count]) => `${genre}:${count}`).join(','),avoid:Object.entries(interests).filter(([,count]) => count < 0).map(([genre]) => genre).join(','),genres:state.recommendationGenres.join(','),languages:state.recommendationLanguages.join(',')});
+  try {
+    const data = await api(`/api/recommendations?${params}`);
+    if (serial !== homeRecommendationSerial) return;
+    state.homeRecommendations = data.items;
+    renderHomeRecommendations();
+    $('#home-recommend-message').textContent = state.visibleHomeRecommendations.length ? 'Top picks based on your browsing and book popularity' : 'No matches yet. Explore more in Browse.';
+  } catch { if (serial === homeRecommendationSerial) $('#home-recommend-message').textContent = 'Suggestions unavailable right now. Try Browse.'; }
+}
+function renderReadingActivity() {
+  const end = new Date();
+  end.setHours(0, 0, 0, 0);
+  const first = new Date(end);
+  first.setDate(first.getDate() - 364);
+  const start = new Date(first);
+  start.setDate(start.getDate() - start.getDay());
+  const dateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const firstKey = dateKey(first);
+  const totals = new Map((state.stats.daily_pages || []).map(item => [item.date, Number(item.pages) || 0]));
+  const days = [], months = [];
+  let pagesRead = 0, activeDays = 0;
+  for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
+    const date = dateKey(day), pages = totals.get(date) || 0;
+    const level = pages >= 50 ? 4 : pages >= 25 ? 3 : pages >= 10 ? 2 : pages > 0 ? 1 : 0;
+    const label = `${date}, ${pages} ${pages === 1 ? 'page' : 'pages'}`;
+    days.push(`<span class="activity-day activity-level-${level}" title="${label}" ${pages ? `role="img" aria-label="${label}"` : 'aria-hidden="true"'}></span>`);
+    if (day.getDate() === 1) months.push(`<span style="grid-column:${Math.floor((days.length - 1) / 7) + 1}">${day.toLocaleString('en', {month:'short'})}</span>`);
+    if (date >= firstKey) { pagesRead += pages; if (pages) activeDays++; }
+  }
+  $('#activity-grid').innerHTML = days.join('');
+  $('#activity-months').style.setProperty('--activity-weeks', Math.ceil(days.length / 7));
+  $('#activity-months').innerHTML = months.join('');
+  $('#activity-summary').textContent = `${pagesRead} pages, ${activeDays} active ${activeDays === 1 ? 'day' : 'days'} in the last 12 months`;
+}
+function renderDashboard() {
+  const st = state.stats;
+  $('#stats').innerHTML = [
+    ['Books in library', st.total || 0], ['Currently reading', st.reading || 0],
+    ['Finished', st.completed || 0], ['Pages read', st.pages_read || 0]
+  ].map(([label, value]) => `<div class="stat-card"><span class="stat-label">${label}</span><strong class="stat-number">${value}</strong></div>`).join('');
+  renderReadingActivity();
+  const active = state.books
+    .filter(({book, reading}) => reading && ['reading', 'paused'].includes(book.status))
+    .sort((a, b) => b.reading.id - a.reading.id);
+  const planned = state.books
+    .filter(({book}) => book.status === 'want')
+    .sort((a, b) => b.book.id - a.book.id);
+  const shelf = state.books
+    .filter(({book}) => !['reading', 'paused', 'want'].includes(book.status))
+    .sort((a, b) => b.book.id - a.book.id);
+  $('.shelf-section').hidden = shelf.length === 0;
+  $('.summary-section').hidden = state.books.length === 0;
+  $('#currently-reading').innerHTML = active.length ? active.map(readingCard).join('') : empty('No books in progress', 'Add a book or start reading one already in your library.', '<a class="secondary-button" href="#browse">Browse books</a>');
+  $('#planned-books').innerHTML = planned.length ? planned.map(plannedCard).join('') : empty('No books planned yet', 'Find a book to read next.', '<a class="secondary-button" href="#browse">Browse books</a>');
+  $('#home-books').innerHTML = shelf.map(bookRow).join('');
+}
+function plannedCard({book}) {
+  return `<article class="planned-card"><button class="planned-cover-button" type="button" data-open="${book.id}" aria-label="Open details for ${escapeHtml(book.title)}">${coverHtml(book, 'planned-cover')}</button><div class="planned-info"><strong>${escapeHtml(book.title)}</strong><span>${escapeHtml(book.authors || 'Unknown author')}</span></div><form class="planned-buy-form" action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(book.title)}"><input type="hidden" name="i" value="stripbooks"><button class="planned-buy" type="submit" aria-label="Search prices for ${escapeHtml(book.title)} on Amazon">Prices</button></form></article>`;
+}
+function readingCard({book, reading}) {
+  const max = reading.unit === 'percent' ? 100 : book.page_count;
+  const unit = reading.unit === 'percent' ? 'percentage point' : 'page';
+  return `<article class="reading-card"><div class="reading-book"><button class="reading-cover-button" type="button" data-open="${book.id}" aria-label="Open details for ${escapeHtml(book.title)}">${coverHtml(book, 'reading-cover')}</button><strong>${escapeHtml(book.title)}</strong><span class="reading-author">${escapeHtml(book.authors || 'Unknown author')}</span></div><div class="reading-page"><label for="page-${book.id}">${reading.unit === 'percent' ? 'Progress' : 'Page'}</label><div class="page-controls"><div class="page-number"><input id="page-${book.id}" data-page-input="${book.id}" type="number" inputmode="numeric" min="0" max="${max}" value="${reading.current_value}" aria-label="Current ${reading.unit === 'percent' ? 'percentage' : 'page'} for ${escapeHtml(book.title)}"><span>${reading.unit === 'percent' ? '%' : max ? `/ ${max}` : ''}</span></div><div class="step-buttons"><button type="button" data-step="1" data-book="${book.id}" aria-label="Increase ${unit} for ${escapeHtml(book.title)}" ${reading.current_value >= max ? 'disabled' : ''}>+</button><button type="button" data-step="-1" data-book="${book.id}" aria-label="Decrease ${unit} for ${escapeHtml(book.title)}" ${reading.current_value <= 0 ? 'disabled' : ''}>−</button></div></div><div class="progress-line" role="progressbar" aria-valuenow="${progressPct(book, reading)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${progressPct(book, reading)}%"></span></div></div></article>`;
+}
+async function saveInlineProgress(bookId, value) {
+  const item = state.books.find(({book}) => book.id === bookId);
+  if (!item?.reading || state.pendingProgress.has(bookId)) return;
+  const max = item.reading.unit === 'percent' ? 100 : item.book.page_count;
+  if (!Number.isInteger(value) || value < 0 || value > max) { notify(`Enter a value between 0 and ${max}`, true); renderDashboard(); return; }
+  if (value === item.reading.current_value) return;
+  state.pendingProgress.add(bookId);
+  $$('[data-book], [data-page-input]').filter(el => Number(el.dataset.book || el.dataset.pageInput) === bookId).forEach(el => el.disabled = true);
+  try {
+    await api(`/api/readings/${item.reading.id}/progress`, jsonRequest('POST', {value, recorded_at: today()}));
+    await refresh();
+  } catch (error) { notify(error.message, true); renderDashboard(); }
+  finally { state.pendingProgress.delete(bookId); }
+}
+function bookRow({book, reading}) {
+  const active = reading && ['reading', 'paused'].includes(book.status);
+  const progress = reading ? `<div class="row-progress"><div class="row-progress-head"><span class="progress-caption">${book.status === 'completed' ? 'LAST READ' : 'PROGRESS'}</span><strong class="page-value">${reading.unit === 'percent' ? `${reading.current_value}<small>%</small>` : `<small>PAGE</small> ${reading.current_value}<small> / ${book.page_count || '?'}</small>`}</strong></div><div class="progress-line" role="progressbar" aria-valuenow="${progressPct(book, reading)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${progressPct(book, reading)}%"></span></div></div>` : `<div class="row-progress row-progress-empty"><span class="progress-caption">PROGRESS</span><strong>Not started</strong></div>`;
+  return `<article class="book-row" data-open="${book.id}" tabindex="0" aria-label="Open ${escapeHtml(book.title)}">${coverHtml(book, 'row-cover')}<div class="row-main"><h3><button class="row-title-button" type="button">${escapeHtml(book.title)}</button></h3><p>${escapeHtml(book.authors || 'Unknown author')}</p><span class="pill ${book.status}">${labels[book.status] || 'Book'}</span></div>${progress}<div class="row-action">${active ? `<button class="row-update" type="button" data-progress="${book.id}" aria-label="Update progress for ${escapeHtml(book.title)}">Update <span aria-hidden="true">↗</span></button>` : '<span aria-hidden="true">→</span>'}</div></article>`;
+}
+function renderLibrary() {
+  const term = $('#library-search').value.trim().toLocaleLowerCase('en');
+  let rows = state.books.filter(({book}) => (state.filter === 'all' || book.status === state.filter) && `${book.title} ${book.authors} ${book.tags}`.toLocaleLowerCase('en').includes(term));
+  const sort = $('#library-sort').value;
+  if (sort === 'recent') rows = rows.sort((a, b) => b.book.id - a.book.id);
+  if (sort === 'title') rows = rows.sort((a, b) => a.book.title.localeCompare(b.book.title, 'en'));
+  if (sort === 'author') rows = rows.sort((a, b) => a.book.authors.localeCompare(b.book.authors, 'en'));
+  $('#library-count').textContent = `${rows.length} ${rows.length === 1 ? 'book' : 'books'}`;
+  $('#library-books').innerHTML = rows.length ? rows.map(bookRow).join('') : empty('No books here', term || state.filter !== 'all' ? 'Try another search or filter.' : 'Add a book from the catalog or create one manually.', '<a class="secondary-button" href="#browse">Find books</a>');
+}
+function navigate() {
+  const previousView = state.view;
+  let view = location.hash.slice(1) || 'inicio';
+  if (view === 'descobrir') { history.replaceState(null, '', '#browse'); view = 'browse'; }
+  state.view = ['inicio','biblioteca','browse'].includes(view) ? view : 'inicio';
+  $$('.view').forEach(el => el.hidden = el.id !== `view-${state.view}`);
+  $$('[data-nav]').forEach(el => el.classList.toggle('active', el.dataset.nav === state.view || (state.view === 'biblioteca' && el.dataset.nav === 'inicio')));
+  if (state.view === 'browse' && previousView !== 'browse') showBrowseResults();
+  window.scrollTo({top:0,behavior:'instant'});
+  if (state.view === 'browse' && !state.browseLoaded) loadRecommendations();
+  if (state.view === 'inicio' && state.booksReady && state.homeStale) loadHomeRecommendations();
+}
+function openDialog(dialog) { dialog.showModal(); }
+function closeDialog(dialog) { dialog.close(); }
+function bookPayload(form) {
+  const data = Object.fromEntries(new FormData(form));
+  return {title:data.title.trim(), authors:data.authors.trim(), isbn:data.isbn || null,
+    work_id:state.bookEdit?.work_id || null, edition_id:state.bookEdit?.edition_id || null,
+    cover_url:data.cover_url || null, page_count:data.page_count ? Number(data.page_count) : null,
+    language:data.language || null, published:data.published || null, description:data.description || '',
+    source:state.bookEdit?.source || 'manual', rating:data.rating ? Number(data.rating) : null,
+    review:data.review || '', notes:data.notes || '', tags:data.tags || '',
+    topics:$$('[data-book-topic][aria-pressed="true"]', form).map(button => button.dataset.bookTopic).join(',')};
+}
+function renderBookTopics(selected = []) {
+  $('#book-topic-choices').innerHTML = renderTopicGroups('data-book-topic', selected);
+  filterTopicChoices($('#book-topic-search'), $('#book-topic-choices'));
+  $('#book-topic-summary').textContent = selected.length ? `Book topics (${selected.length} selected)` : 'Book topics (none selected)';
+}
+function renderTopicGroups(attribute, selected) {
+  return topicGroups.map(group => `<section class="topic-group"><h4>${group.label}</h4><div class="choice-row">${Object.entries(group.topics).map(([key, label]) => `<button type="button" ${attribute}="${key}" aria-pressed="${selected.includes(key)}">${label}</button>`).join('')}</div></section>`).join('');
+}
+function filterTopicChoices(input, root) {
+  const normalise = value => value.toLocaleLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const query = normalise(input.value.trim());
+  $$('.topic-group', root).forEach(group => {
+    const buttons = $$('button', group);
+    buttons.forEach(button => { button.hidden = Boolean(query) && !normalise(`${button.textContent} ${topicSearchAliases[button.dataset.bookTopic || button.dataset.recommendGenre] || ''}`).includes(query); });
+    group.hidden = buttons.every(button => button.hidden);
+  });
+}
+function openBookForm(book = null, ratingOnly = false) {
+  state.bookEdit = book;
+  $('#book-form').reset();
+  $('#book-topic-search').value = '';
+  $('#book-dialog').classList.toggle('rating-only', ratingOnly);
+  $('#book-form-kicker').textContent = ratingOnly ? book.title : book ? 'Edit entry' : 'New book';
+  $('#book-form-heading').textContent = ratingOnly ? 'Your rating' : book ? 'Edit book' : 'Add to library';
+  $('#book-form button[type="submit"]').textContent = ratingOnly ? 'Save rating' : 'Save book';
+  if (book) for (const name of ['title','authors','isbn','page_count','language','published','cover_url','description','rating','review','notes','tags']) $('#book-form').elements[name].value = book[name] ?? '';
+  renderBookTopics((book?.topics || '').split(',').filter(value => popularTopics[value]));
+  $('.book-topic-picker').open = !ratingOnly && Boolean(book && !book.topics);
+  openDialog($('#book-dialog'));
+}
+async function openDetail(id) {
+  state.selected = await api(`/api/books/${id}`); recordViewedWork(state.selected.book.work_id); renderDetail(); openDialog($('#detail-dialog'));
+}
+function renderDetail() {
+  const {book, readings} = state.selected;
+  const latest = readings[0]?.reading;
+  const active = latest && ['reading','paused'].includes(latest.status);
+  const progressControls = active
+    ? `<button class="primary-button" data-action="progress">Update progress</button>${latest.status === 'paused' ? '<button class="secondary-button" data-status="reading">Resume</button>' : '<button class="secondary-button" data-status="paused">Pause</button>'}<button class="secondary-button" data-status="completed">Finish</button><button class="secondary-button" data-status="abandoned">Abandon</button>`
+    : `<select id="unit-select" aria-label="Progress unit">${book.page_count ? '<option value="pages">Pages</option>' : ''}<option value="percent">Percentage</option></select><button class="primary-button" data-action="start">${readings.length ? 'Read again' : 'Start reading'}</button>`;
+  const metadata = [languageLabel(book.language), book.published, book.page_count ? `${book.page_count} pages` : null, book.isbn ? `ISBN ${book.isbn}` : null].filter(Boolean).map(escapeHtml).join(', ');
+  const history = readings.length ? readings.map(({reading, progress}) => `<div class="reading-history"><p><strong>${escapeHtml(labels[reading.status])}</strong>, ${escapeHtml(dateLabel(reading.started_at))}${reading.finished_at ? ` – ${escapeHtml(dateLabel(reading.finished_at))}` : ''}</p>${progress.length ? progress.map(p => `<div class="history-item"><span>${reading.unit === 'percent' ? `${p.value}%` : `Page ${p.value}`}${p.note ? `, ${escapeHtml(p.note)}` : ''}<br><small>${escapeHtml(dateLabel(p.recorded_at))}</small></span><span><button data-edit-progress="${p.id}">Edit</button><button data-delete-progress="${p.id}">Delete</button></span></div>`).join('') : '<p>No progress entries yet.</p>'}</div>`).join('') : '<p>You have not started this book yet.</p>';
+  $('#detail-content').innerHTML = `<div class="dialog-head"><p class="eyebrow">${escapeHtml(labels[book.status] || 'Book')}</p><button class="icon-button close-dialog" type="button" aria-label="Close">×</button></div><div class="detail-top">${coverHtml(book, 'detail-cover')}<div class="detail-info"><h2>${escapeHtml(book.title)}</h2><p>${escapeHtml(book.authors || 'Unknown author')}</p><p>${metadata}</p>${book.topics ? `<p class="detail-topics">${escapeHtml(book.topics.split(',').map(topicLabel).join(', '))}</p>` : ''}${book.rating ? `<p aria-label="${book.rating} out of 5 stars">${'★'.repeat(book.rating)}${'☆'.repeat(5-book.rating)}</p>` : ''}${latest ? `<div class="progress-line"><span style="width:${progressPct(book,latest)}%"></span></div><p>${readingText(book, latest)}</p>` : ''}<div class="detail-actions">${progressControls}</div></div></div><div class="detail-actions" style="margin-top:22px"><button class="text-link" data-action="edit-rating">${book.rating ? 'Edit rating' : 'Add rating'}</button><button class="text-link" data-action="edit-book">Edit book</button><button class="text-link" data-action="delete-book">Remove book</button>${book.work_id ? `<a class="text-link" href="https://openlibrary.org/works/${escapeHtml(book.work_id)}" target="_blank" rel="noopener noreferrer">View on Open Library ↗</a>` : ''}</div>${book.description ? `<section class="detail-section"><h3>About this book</h3><p>${escapeHtml(book.description)}</p></section>` : ''}${book.tags ? `<section class="detail-section"><h3>Tags</h3><p>${escapeHtml(book.tags)}</p></section>` : ''}${book.review ? `<section class="detail-section"><h3>Your review</h3><p>${escapeHtml(book.review)}</p></section>` : ''}${book.notes ? `<section class="detail-section"><h3>Notes</h3><p>${escapeHtml(book.notes)}</p></section>` : ''}<section class="detail-section"><h3>Reading history</h3>${history}</section>`;
+}
+function openProgress(entry = null) {
+  const {book, readings} = state.selected; const r = readings.find(x => x.progress.some(p => p.id === entry?.id))?.reading || readings[0]?.reading;
+  if (!r) return;
+  state.progressEdit = entry;
+  $('#progress-form').reset();
+  $('#progress-heading').textContent = entry ? 'Edit progress' : 'Update progress';
+  $('#progress-context').textContent = `${book.title}, ${r.unit === 'percent' ? 'percentage (0–100)' : `page (0–${book.page_count})`}`;
+  $('#progress-form').elements.value.max = r.unit === 'percent' ? 100 : book.page_count;
+  $('#progress-form').elements.value.value = entry?.value ?? r.current_value;
+  $('#progress-form').elements.note.value = entry?.note || '';
+  $('#progress-form').elements.recorded_at.value = entry?.recorded_at?.slice(0,10) || today();
+  if ($('#detail-dialog').open) $('#detail-dialog').close();
+  openDialog($('#progress-dialog'));
+}
+
+function showBrowseResults() {
+  isbnSerial++;
+  $('#edition-area').hidden = true;
+  $('#browse-recommend-section').hidden = false;
+  $('#isbn-message').hidden = true;
+}
+async function openBrowseWork(item) {
+  if (!item) return;
+  clearTimeout(browseSearchTimer);
+  state.catalogItems = [item];
+  state.work = item;
+  state.editionOffset = 0;
+  $('#browse-dialog-editions').hidden = true;
+  $('#browse-dialog-edition-results').innerHTML = '';
+  const serial = ++browseDialogSerial;
+  browseDialogEditionSerial++;
+  const meta = [item.genre ? topicLabel(item.genre) : null, item.year].filter(Boolean).join(', ');
+  $('#browse-dialog-content').innerHTML = `<div class="browse-dialog-top">${coverHtml(item, 'browse-dialog-cover')}<div class="browse-dialog-info"><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</p>${meta ? `<p>${escapeHtml(meta)}</p>` : ''}${item.ratings_count >= 5 ? `<p>★ ${Number(item.ratings_average).toFixed(1)}, ${item.ratings_count} ratings</p>` : ''}<h3>Synopsis</h3><p id="browse-dialog-synopsis" class="browse-synopsis">Loading synopsis…</p></div></div><div class="browse-dialog-actions"><button id="browse-view-editions" class="secondary-button" type="button">View editions</button><form action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(item.title)}"><input type="hidden" name="i" value="stripbooks"><button class="secondary-button" type="submit" aria-label="Search prices for ${escapeHtml(item.title)} on Amazon">Prices</button></form></div>`;
+  recordViewedWork(item.work_id, item.genre);
+  openDialog($('#browse-dialog'));
+  try {
+    const details = await api(`/api/catalog/works/${encodeURIComponent(item.work_id)}`);
+    if (serial === browseDialogSerial && $('#browse-dialog').open) $('#browse-dialog-synopsis').textContent = details.description || 'No synopsis available for this book.';
+  } catch {
+    if (serial === browseDialogSerial && $('#browse-dialog').open) $('#browse-dialog-synopsis').textContent = 'Synopsis unavailable right now.';
+  }
+}
+async function loadBrowseDialogEditions(append = false) {
+  if (!state.work) return;
+  const serial = ++browseDialogEditionSerial;
+  const work = state.work;
+  const area = $('#browse-dialog-editions');
+  area.hidden = false;
+  if (!append) { state.editionOffset = 0; $('#browse-dialog-edition-results').innerHTML = '<p class="muted">Loading editions…</p>'; }
+  $('#browse-dialog-more-editions').hidden = true;
+  try {
+    const data = await api(`/api/catalog/works/${encodeURIComponent(work.work_id)}/editions?offset=${state.editionOffset}`);
+    if (serial !== browseDialogEditionSerial || !$('#browse-dialog').open) return;
+    const sorted = [...data.items].sort((a, b) => {
+      const score = ed => (state.recommendationLanguages.length
+        ? (state.recommendationLanguages.includes(ed.language) ? 0 : 1)
+        : (ed.language === 'eng' ? 0 : ed.language === 'por' ? 1 : 2)) * 10
+        + (ed.page_count ? 0 : 2) + (ed.cover_url ? 0 : 1);
+      return score(a) - score(b);
+    });
+    const base = append ? state.editionItems.length : 0;
+    state.editionItems = append ? [...state.editionItems, ...sorted] : sorted;
+    if (!append) $('#browse-dialog-edition-results').innerHTML = '';
+    $('#browse-dialog-edition-results').insertAdjacentHTML('beforeend', sorted.map((ed, i) => editionHtml(ed, base + i, work.title)).join('') || (append ? '' : empty('No editions available', 'You can add this book manually.')));
+    state.editionOffset += data.items.length;
+    $('#browse-dialog-more-editions').hidden = state.editionOffset >= data.total || !data.items.length;
+  } catch (error) {
+    if (serial === browseDialogEditionSerial) $('#browse-dialog-edition-results').innerHTML = empty('Editions unavailable', 'Try again later.');
+  }
+}
+function editionHtml(ed, index, fallbackTitle) {
+  return `<article class="edition-item">${coverHtml({...ed,title:ed.title || fallbackTitle},'mini-cover')}<div class="catalog-meta"><h3>${escapeHtml(ed.title || fallbackTitle)}</h3>${ed.authors?.length ? `<p>${escapeHtml(ed.authors.join(', '))}</p>` : ''}<p>${escapeHtml([languageLabel(ed.language),ed.published,ed.page_count ? `${ed.page_count} pages` : 'Page count unknown'].filter(Boolean).join(', '))}</p><p>${ed.isbn ? `ISBN ${escapeHtml(ed.isbn)}` : 'No ISBN'}</p></div><button class="primary-button" data-edition="${index}" type="button">Add</button></article>`;
+}
+async function lookupIsbn(raw) {
+  clearTimeout(browseSearchTimer);
+  const isbn = raw.replace(/[\s-]/g, '').toUpperCase();
+  const serial = ++isbnSerial;
+  recommendationSerial++;
+  $('#isbn-message').hidden = false;
+  $('#isbn-message').textContent = 'Finding the exact edition…';
+  $('#browse-recommend-section').hidden = true;
+  $('#edition-area').hidden = false;
+  $('#edition-heading').textContent = 'Finding edition…';
+  $('#edition-results').innerHTML = '';
+  $('#more-editions').hidden = true;
+  try {
+    const ed = await api(`/api/catalog/isbn/${encodeURIComponent(isbn)}`);
+    if (serial !== isbnSerial) return;
+    state.work = {title:ed.title, authors:ed.authors || [], cover_url:ed.cover_url, work_id:ed.work_id};
+    state.editionItems = [ed]; state.editionOffset = 0; state.editionTotal = 1;
+    $('#edition-heading').textContent = ed.title || 'Edition';
+    $('#edition-results').innerHTML = editionHtml(ed, 0, ed.title || 'Untitled');
+    $('#isbn-message').textContent = `Exact edition found, ISBN ${ed.isbn}`;
+    recordViewedWork(ed.work_id);
+  } catch (error) {
+    if (serial !== isbnSerial) return;
+    $('#edition-area').hidden = true;
+    $('#browse-recommend-section').hidden = false;
+    $('#isbn-message').textContent = error.message;
+  }
+}
+async function showEditions(index, append = false) {
+  if (!append) { clearTimeout(browseSearchTimer); state.work = state.catalogItems[index]; state.editionOffset = 0; $('#edition-results').innerHTML = ''; $('#isbn-query').value = ''; recordViewedWork(state.work?.work_id, state.work?.genre); }
+  if (!state.work) return;
+  isbnSerial++;
+  $('#isbn-message').hidden = true;
+  $('#edition-area').hidden = false; $('#browse-recommend-section').hidden = true;
+  $('#more-editions').hidden = true;
+  $('#edition-heading').textContent = state.work.title;
+  $('#edition-results').insertAdjacentHTML('beforeend', append ? '' : '<p class="muted">Loading editions…</p>');
+  try {
+    const data = await api(`/api/catalog/works/${encodeURIComponent(state.work.work_id)}/editions?offset=${state.editionOffset}`);
+    if (!append) $('#edition-results').innerHTML = '';
+    const sorted = [...data.items].sort((a,b) => {
+      const score = ed => (state.recommendationLanguages.length
+        ? (state.recommendationLanguages.includes(ed.language) ? 0 : 1)
+        : (ed.language === 'eng' ? 0 : ed.language === 'por' ? 1 : 2)) * 10
+        + (ed.page_count ? 0 : 2) + (ed.cover_url ? 0 : 1);
+      return score(a) - score(b);
+    });
+    state.editionTotal = data.total; const base = append ? state.editionItems.length : 0; state.editionItems = append ? [...state.editionItems, ...sorted] : sorted;
+    $('#edition-results').insertAdjacentHTML('beforeend', sorted.map((ed, i) => editionHtml(ed, base + i, state.work.title)).join('') || (append ? '' : empty('No editions available', 'You can add this book manually.')));
+    state.editionOffset += data.items.length;
+    $('#more-editions').hidden = state.editionOffset >= data.total || !data.items.length;
+  } catch (e) { $('#edition-results').innerHTML = empty('Editions unavailable', 'Try again or add the book manually.'); notify(e.message, true); }
+}
+async function importEdition(index) {
+  const ed = state.editionItems[index]; if (!ed) return;
+  const payload = {title:ed.title || state.work.title, authors:(state.work.authors || []).join(', '), isbn:ed.isbn || null, work_id:ed.work_id, edition_id:ed.edition_id, cover_url:ed.cover_url || state.work.cover_url, page_count:ed.page_count || null, language:ed.language || null, published:ed.published || null, description:'', source:'openlibrary', rating:null, review:'', notes:'', tags:''};
+  if (!payload.page_count) {
+    state.pendingEdition = payload;
+    $('#page-count-form').reset();
+    $('#page-count-book').textContent = payload.title;
+    openDialog($('#page-count-dialog'));
+    $('#page-count-form').elements.page_count.focus();
+    return;
+  }
+  await createImportedBook(payload);
+}
+async function createImportedBook(payload) {
+  if (state.importing) return;
+  state.importing = true;
+  $$('#page-count-form button').forEach(button => button.disabled = true);
+  try {
+    const book = await api('/api/books', jsonRequest('POST', payload));
+    if ($('#page-count-dialog').open) $('#page-count-dialog').close();
+    if ($('#browse-dialog').open) $('#browse-dialog').close();
+    state.pendingEdition = null;
+    await refresh();
+    notify('Book added to your library');
+    await openDetail(book.id);
+  } catch (error) { notify(error.message, true); }
+  finally { state.importing = false; $$('#page-count-form button').forEach(button => button.disabled = false); }
+}
+
+$$('dialog').forEach(dialog => dialog.addEventListener('click', event => {
+  if (event.target !== dialog) return;
+  const rect = dialog.getBoundingClientRect();
+  if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+}));
+
+document.addEventListener('click', async event => {
+  const close = event.target.closest('.close-dialog'); if (close) { close.closest('dialog').close(); return; }
+  const genre = event.target.closest('[data-recommend-genre]');
+  if (genre) { const key = genre.dataset.recommendGenre; if (state.recommendationGenres.includes(key)) state.recommendationGenres = state.recommendationGenres.filter(value => value !== key); else if (state.recommendationGenres.length < 4) state.recommendationGenres.push(key); else { notify('Choose up to 4 topics', true); return; } saveRecommendationChoices(); return; }
+  const language = event.target.closest('[data-recommend-language]');
+  if (language) { const key = language.dataset.recommendLanguage; state.recommendationLanguages = state.recommendationLanguages.includes(key) ? state.recommendationLanguages.filter(value => value !== key) : [...state.recommendationLanguages, key]; saveRecommendationChoices(); return; }
+  const bookTopic = event.target.closest('[data-book-topic]');
+  if (bookTopic) { const selected = $$('[data-book-topic][aria-pressed="true"]', $('#book-form')).map(button => button.dataset.bookTopic); const key = bookTopic.dataset.bookTopic; if (selected.includes(key)) renderBookTopics(selected.filter(value => value !== key)); else if (selected.length < 4) renderBookTopics([...selected, key]); else notify('Choose up to 4 topics', true); return; }
+  const recommendation = event.target.closest('[data-recommend-work]');
+  if (recommendation) { openBrowseWork(state.visibleRecommendations[Number(recommendation.dataset.recommendWork)]); return; }
+  if (event.target.closest('#browse-view-editions')) { await loadBrowseDialogEditions(); return; }
+  const homeRecommendation = event.target.closest('[data-home-recommend]');
+  if (homeRecommendation) { openBrowseWork(state.visibleHomeRecommendations[Number(homeRecommendation.dataset.homeRecommend)]); return; }
+  const step = event.target.closest('[data-step]'); if (step) { const id = Number(step.dataset.book); const item = state.books.find(({book}) => book.id === id); if (item?.reading) await saveInlineProgress(id, item.reading.current_value + Number(step.dataset.step)); return; }
+  const progress = event.target.closest('[data-progress]'); if (progress) { try { state.selected = await api(`/api/books/${progress.dataset.progress}`); openProgress(); } catch(e) { notify(e.message,true); } return; }
+  const open = event.target.closest('[data-open]'); if (open) { try { await openDetail(Number(open.dataset.open)); } catch(e) { notify(e.message,true); } return; }
+  const edition = event.target.closest('[data-edition]'); if (edition) { importEdition(Number(edition.dataset.edition)); return; }
+  const action = event.target.closest('[data-action]');
+  if (action) {
+    const name = action.dataset.action;
+    if (name === 'manual') { openBookForm(); return; }
+    if (name === 'edit-book') { const b = state.selected.book; $('#detail-dialog').close(); openBookForm(b); return; }
+    if (name === 'edit-rating') { const b = state.selected.book; $('#detail-dialog').close(); openBookForm(b, true); return; }
+    if (name === 'delete-book') { const b = state.selected.book; if (!confirm(`Remove “${b.title}” and all its reading history?`)) return; try { await api(`/api/books/${b.id}`, {method:'DELETE'}); $('#detail-dialog').close(); await refresh(); notify('Book removed'); } catch(e) { notify(e.message,true); } return; }
+    if (name === 'start') { try { await api(`/api/books/${state.selected.book.id}/readings`, jsonRequest('POST',{unit:$('#unit-select').value})); state.selected = await api(`/api/books/${state.selected.book.id}`); renderDetail(); await refresh(); notify('Reading started'); } catch(e) { notify(e.message,true); } return; }
+    if (name === 'progress') { openProgress(); return; }
+  }
+  const status = event.target.closest('[data-status]'); if (status) { try { await api(`/api/readings/${state.selected.readings[0].reading.id}`,jsonRequest('PATCH',{status:status.dataset.status})); state.selected = await api(`/api/books/${state.selected.book.id}`); renderDetail(); await refresh(); notify('Status updated'); } catch(e) { notify(e.message,true); } return; }
+  const edit = event.target.closest('[data-edit-progress]'); if (edit) { const p = state.selected.readings.flatMap(x => x.progress).find(p => p.id === Number(edit.dataset.editProgress)); openProgress(p); return; }
+  const del = event.target.closest('[data-delete-progress]'); if (del) { if (!confirm('Delete this progress entry?')) return; try { await api(`/api/progress/${del.dataset.deleteProgress}`,{method:'DELETE'}); state.selected = await api(`/api/books/${state.selected.book.id}`); renderDetail(); await refresh(); notify('Entry deleted'); } catch(e) { notify(e.message,true); } }
+});
+document.addEventListener('change', event => { const input = event.target.closest('[data-page-input]'); if (!input) return; if (input.value.trim() === '') { notify('Enter your current page', true); renderDashboard(); return; } saveInlineProgress(Number(input.dataset.pageInput), Number(input.value)); });
+document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.book-row')) { e.preventDefault(); e.target.click(); } });
+$('#book-form').addEventListener('submit', async e => { e.preventDefault(); const payload = bookPayload(e.currentTarget); try { const b = await api(state.bookEdit ? `/api/books/${state.bookEdit.id}` : '/api/books',jsonRequest(state.bookEdit ? 'PUT':'POST',payload)); $('#book-dialog').close(); await refresh(); notify('Book saved'); openDetail(b.id); } catch(err) { notify(err.message,true); } });
+$('#page-count-form').addEventListener('submit', e => { e.preventDefault(); if (!state.pendingEdition) return; const count = Number(e.currentTarget.elements.page_count.value); if (!Number.isInteger(count) || count < 1) return; createImportedBook({...state.pendingEdition, page_count: count}); });
+$('#skip-pages').addEventListener('click', () => { if (state.pendingEdition) createImportedBook({...state.pendingEdition, page_count: null}); });
+$('#progress-form').addEventListener('submit', async e => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); const payload = {value:Number(data.value),note:data.note,recorded_at:data.recorded_at}; const rid = state.selected.readings[0].reading.id; try { await api(state.progressEdit ? `/api/progress/${state.progressEdit.id}` : `/api/readings/${rid}/progress`,jsonRequest(state.progressEdit?'PUT':'POST',payload)); $('#progress-dialog').close(); state.selected = await api(`/api/books/${state.selected.book.id}`); await refresh(); renderDetail(); openDialog($('#detail-dialog')); notify('Progress saved'); } catch(err) { notify(err.message,true); } });
+$('#library-search').addEventListener('input',renderLibrary); $('#library-sort').addEventListener('change',renderLibrary);
+$('#library-filters').addEventListener('click',e => { const b=e.target.closest('[data-filter]'); if(!b)return; state.filter=b.dataset.filter; $$('[data-filter]').forEach(x=>x.classList.toggle('active',x===b)); renderLibrary(); });
+$('#filter-toggle').addEventListener('click', () => {
+  const toggle = $('#filter-toggle');
+  toggle.setAttribute('aria-expanded', toggle.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+  syncBrowseFilters();
+});
+$('#recommend-topic-search').addEventListener('input', () => filterTopicChoices($('#recommend-topic-search'), $('#recommend-genres')));
+$('#book-topic-search').addEventListener('input', () => filterTopicChoices($('#book-topic-search'), $('#book-topic-choices')));
+$('#recommend-load').addEventListener('click', () => {
+  $('#filter-toggle').setAttribute('aria-expanded', 'false');
+  syncBrowseFilters();
+  loadRecommendations();
+});
+$('#browse-search').addEventListener('input', () => {
+  clearTimeout(browseSearchTimer);
+  recommendationSerial++;
+  showBrowseResults();
+  state.recommendations = [];
+  renderRecommendations();
+  const term = $('#browse-search').value.trim();
+  if (term) $('#filter-toggle').setAttribute('aria-expanded', 'false');
+  syncBrowseFilters();
+  $('#recommend-message').textContent = term.length === 1 ? 'Enter at least two characters to search.' : term ? 'Searching books…' : 'Finding books…';
+  if (term.length !== 1) browseSearchTimer = setTimeout(loadRecommendations, term ? 400 : 0);
+});
+$('#browse-search').addEventListener('keydown', event => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  clearTimeout(browseSearchTimer);
+  loadRecommendations();
+});
+$('#detail-dialog').addEventListener('close', () => { if (state.view === 'inicio' && state.homeStale) loadHomeRecommendations(); });
+$('#isbn-form').addEventListener('submit', event => { event.preventDefault(); clearTimeout(browseSearchTimer); lookupIsbn($('#isbn-query').value.trim()); });
+$('#close-editions').addEventListener('click',showBrowseResults);
+$('#browse-dialog-more-editions').addEventListener('click', () => loadBrowseDialogEditions(true));
+$('#browse-dialog').addEventListener('close', () => { browseDialogSerial++; browseDialogEditionSerial++; });
+$('#more-editions').addEventListener('click',()=>showEditions(0,true));
+$('#manual-add').addEventListener('click',()=>openBookForm());
+$('[data-nav="browse"]').addEventListener('click',()=>{ if (state.view === 'browse') showBrowseResults(); });
+$('#backup-open').addEventListener('click',()=>openDialog($('#data-dialog')));
+$('#export-button').addEventListener('click',async()=>{try{const data=await api('/api/export');const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`booklib-${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);notify('Backup downloaded');}catch(e){notify(e.message,true);}});
+$('#import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{const data=JSON.parse(await file.text());if(data.version!==1||!Array.isArray(data.books)||!Array.isArray(data.readings)||!Array.isArray(data.progress_entries))throw new Error('Invalid backup file');if(!confirm(`Restore ${data.books.length} books? Your current data will be replaced.`))return;await api('/api/import',jsonRequest('POST',data));$('#data-dialog').close();await refresh();notify('Library restored');}catch(err){notify(err.message,true);}finally{e.target.value='';}});
+window.addEventListener('hashchange',navigate); initRecommendations(); navigate(); refresh().catch(e=>notify(e.message,true));
