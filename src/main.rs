@@ -97,6 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .put(library::update_book)
                 .delete(library::delete_book),
         )
+        .route("/api/books/:id/rating", axum::routing::patch(library::update_rating))
         .route("/api/books/:id/readings", post(library::start_reading))
         .route(
             "/api/readings/:id",

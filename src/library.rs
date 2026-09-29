@@ -23,6 +23,7 @@ pub struct Book {
     description: String,
     source: String,
     status: String,
+    #[sqlx(rename = "user_rating")]
     rating: Option<i64>,
     review: String,
     notes: String,
@@ -69,6 +70,10 @@ pub struct BookInput {
     notes: Option<String>,
     tags: Option<String>,
     topics: Option<String>,
+}
+#[derive(Deserialize)]
+pub struct RatingInput {
+    rating: Option<i64>,
 }
 #[derive(Deserialize)]
 pub struct StartReading {
@@ -129,7 +134,7 @@ fn validate_book(b: &BookInput) -> Result<(), AppError> {
     if b.page_count.is_some_and(|n| !(1..=100_000).contains(&n)) {
         return Err(bad("Número de páginas inválido"));
     }
-    if b.rating.is_some_and(|n| !(1..=5).contains(&n)) {
+    if b.rating.is_some_and(|n| !(1..=10).contains(&n)) {
         return Err(bad("Classificação inválida"));
     }
     if let Some(topics) = b.topics.as_deref() {
@@ -234,7 +239,7 @@ pub async fn create_book(State(s): State<AppState>, Json(b): Json<BookInput>) ->
         },
         _ => String::new(),
     };
-    let id = sqlx::query("INSERT INTO books (title,authors,isbn,work_id,edition_id,cover_url,page_count,language,published,description,source,rating,review,notes,tags,topics) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+    let id = sqlx::query("INSERT INTO books (title,authors,isbn,work_id,edition_id,cover_url,page_count,language,published,description,source,user_rating,review,notes,tags,topics) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
         .bind(b.title.trim()).bind(b.authors.trim()).bind(b.isbn).bind(b.work_id).bind(b.edition_id)
         .bind(b.cover_url).bind(b.page_count).bind(b.language).bind(b.published)
         .bind(b.description.unwrap_or_default()).bind(b.source.unwrap_or_else(|| "manual".into()))
@@ -249,11 +254,27 @@ pub async fn update_book(
 ) -> ApiResult<Book> {
     book(&s.db, id).await?;
     validate_book(&b)?;
-    sqlx::query("UPDATE books SET title=?,authors=?,isbn=?,work_id=?,edition_id=?,cover_url=?,page_count=?,language=?,published=?,description=?,rating=?,review=?,notes=?,tags=?,topics=?,updated_at=datetime('now') WHERE id=?")
+    sqlx::query("UPDATE books SET title=?,authors=?,isbn=?,work_id=?,edition_id=?,cover_url=?,page_count=?,language=?,published=?,description=?,user_rating=?,review=?,notes=?,tags=?,topics=?,updated_at=datetime('now') WHERE id=?")
         .bind(b.title.trim()).bind(b.authors.trim()).bind(b.isbn).bind(b.work_id).bind(b.edition_id)
         .bind(b.cover_url).bind(b.page_count).bind(b.language).bind(b.published)
         .bind(b.description.unwrap_or_default()).bind(b.rating).bind(b.review.unwrap_or_default())
         .bind(b.notes.unwrap_or_default()).bind(b.tags.unwrap_or_default()).bind(b.topics.unwrap_or_default()).bind(id).execute(&s.db).await?;
+    Ok(Json(book(&s.db, id).await?))
+}
+pub async fn update_rating(
+    State(s): State<AppState>,
+    Path(id): Path<i64>,
+    Json(input): Json<RatingInput>,
+) -> ApiResult<Book> {
+    if input.rating.is_some_and(|rating| !(1..=10).contains(&rating)) {
+        return Err(bad("Classificação inválida"));
+    }
+    book(&s.db, id).await?;
+    sqlx::query("UPDATE books SET user_rating=?,updated_at=datetime('now') WHERE id=?")
+        .bind(input.rating)
+        .bind(id)
+        .execute(&s.db)
+        .await?;
     Ok(Json(book(&s.db, id).await?))
 }
 pub async fn delete_book(State(s): State<AppState>, Path(id): Path<i64>) -> ApiResult<Value> {
@@ -526,11 +547,11 @@ pub async fn export_data(State(s): State<AppState>) -> ApiResult<Value> {
             .fetch_all(&s.db)
             .await?;
     Ok(Json(
-        json!({"version": 1, "books": books, "readings": readings, "progress_entries": progress_entries}),
+        json!({"version": 2, "books": books, "readings": readings, "progress_entries": progress_entries}),
     ))
 }
 pub async fn import_data(State(s): State<AppState>, Json(data): Json<Backup>) -> ApiResult<Value> {
-    if data.version != 1 {
+    if data.version != 1 && data.version != 2 {
         return Err(bad("Versão de ficheiro não suportada"));
     }
     if data.books.len() > 100_000
@@ -552,7 +573,7 @@ pub async fn import_data(State(s): State<AppState>, Json(data): Json<Backup>) ->
             published: b.published.clone(),
             description: Some(b.description.clone()),
             source: Some(b.source.clone()),
-            rating: b.rating,
+            rating: b.rating.map(|rating| if data.version == 1 { rating * 2 } else { rating }),
             review: Some(b.review.clone()),
             notes: Some(b.notes.clone()),
             tags: Some(b.tags.clone()),
@@ -599,10 +620,10 @@ pub async fn import_data(State(s): State<AppState>, Json(data): Json<Backup>) ->
         .await?;
     sqlx::query("DELETE FROM books").execute(&mut *tx).await?;
     for b in &data.books {
-        sqlx::query("INSERT INTO books (id,title,authors,isbn,work_id,edition_id,cover_url,page_count,language,published,description,source,status,rating,review,notes,tags,topics,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+        sqlx::query("INSERT INTO books (id,title,authors,isbn,work_id,edition_id,cover_url,page_count,language,published,description,source,status,user_rating,review,notes,tags,topics,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
             .bind(b.id).bind(&b.title).bind(&b.authors).bind(&b.isbn).bind(&b.work_id).bind(&b.edition_id)
             .bind(&b.cover_url).bind(b.page_count).bind(&b.language).bind(&b.published).bind(&b.description)
-            .bind(&b.source).bind(&b.status).bind(b.rating).bind(&b.review).bind(&b.notes).bind(&b.tags).bind(&b.topics)
+            .bind(&b.source).bind(&b.status).bind(b.rating.map(|rating| if data.version == 1 { rating * 2 } else { rating })).bind(&b.review).bind(&b.notes).bind(&b.tags).bind(&b.topics)
             .bind(&b.created_at).bind(&b.updated_at).execute(&mut *tx).await?;
     }
     for r in &data.readings {

@@ -187,7 +187,7 @@ async function loadHomeRecommendations() {
   const interests = {};
   for (const item of state.viewedWorks) for (const genre of item.genres || []) if (popularTopics[genre]) interests[genre] = (interests[genre] || 0) + Math.min(5, item.views || 1);
   for (const {book} of state.books) {
-    const weight = book.rating == null ? 2 : [0, -6, -3, 1, 3, 5][book.rating] || 0;
+    const weight = book.rating == null ? 2 : book.rating - 5;
     for (const topic of (book.topics || '').split(',')) if (weight && popularTopics[topic]) interests[topic] = (interests[topic] || 0) + weight;
   }
   const params = new URLSearchParams({mode:'home',seen:workIds.join(','),interests:Object.entries(interests).filter(([,count]) => count > 0).map(([genre,count]) => `${genre}:${count}`).join(','),avoid:Object.entries(interests).filter(([,count]) => count < 0).map(([genre]) => genre).join(','),genres:state.recommendationGenres.join(','),languages:state.recommendationLanguages.join(',')});
@@ -303,7 +303,7 @@ function bookPayload(form) {
     work_id:state.bookEdit?.work_id || null, edition_id:state.bookEdit?.edition_id || null,
     cover_url:data.cover_url || null, page_count:data.page_count ? Number(data.page_count) : null,
     language:data.language || null, published:data.published || null, description:data.description || '',
-    source:state.bookEdit?.source || 'manual', rating:data.rating ? Number(data.rating) : null,
+    source:state.bookEdit?.source || 'manual', rating:state.bookEdit?.rating ?? null,
     review:data.review || '', notes:data.notes || '', tags:data.tags || '',
     topics:$$('[data-book-topic][aria-pressed="true"]', form).map(button => button.dataset.bookTopic).join(',')};
 }
@@ -324,17 +324,16 @@ function filterTopicChoices(input, root) {
     group.hidden = buttons.every(button => button.hidden);
   });
 }
-function openBookForm(book = null, ratingOnly = false) {
+function openBookForm(book = null) {
   state.bookEdit = book;
   $('#book-form').reset();
   $('#book-topic-search').value = '';
-  $('#book-dialog').classList.toggle('rating-only', ratingOnly);
-  $('#book-form-kicker').textContent = ratingOnly ? book.title : book ? 'Edit entry' : 'New book';
-  $('#book-form-heading').textContent = ratingOnly ? 'Your rating' : book ? 'Edit book' : 'Add to library';
-  $('#book-form button[type="submit"]').textContent = ratingOnly ? 'Save rating' : 'Save book';
-  if (book) for (const name of ['title','authors','isbn','page_count','language','published','cover_url','description','rating','review','notes','tags']) $('#book-form').elements[name].value = book[name] ?? '';
+  $('#book-form-kicker').textContent = book ? 'Edit entry' : 'New book';
+  $('#book-form-heading').textContent = book ? 'Edit book' : 'Add to library';
+  $('#book-form button[type="submit"]').textContent = 'Save book';
+  if (book) for (const name of ['title','authors','isbn','page_count','language','published','cover_url','description','review','notes','tags']) $('#book-form').elements[name].value = book[name] ?? '';
   renderBookTopics((book?.topics || '').split(',').filter(value => popularTopics[value]));
-  $('.book-topic-picker').open = !ratingOnly && Boolean(book && !book.topics);
+  $('.book-topic-picker').open = Boolean(book && !book.topics);
   openDialog($('#book-dialog'));
 }
 async function openDetail(id) {
@@ -348,8 +347,23 @@ function renderDetail() {
     ? `<button class="primary-button" data-action="progress">Update progress</button>${latest.status === 'paused' ? '<button class="secondary-button" data-status="reading">Resume</button>' : '<button class="secondary-button" data-status="paused">Pause</button>'}<button class="secondary-button" data-status="completed">Finish</button><button class="secondary-button" data-status="abandoned">Abandon</button>`
     : `<select id="unit-select" aria-label="Progress unit">${book.page_count ? '<option value="pages">Pages</option>' : ''}<option value="percent">Percentage</option></select><button class="primary-button" data-action="start">${readings.length ? 'Read again' : 'Start reading'}</button>`;
   const metadata = [languageLabel(book.language), book.published, book.page_count ? `${book.page_count} pages` : null, book.isbn ? `ISBN ${book.isbn}` : null].filter(Boolean).map(escapeHtml).join(', ');
-  const history = readings.length ? readings.map(({reading, progress}) => `<div class="reading-history"><p><strong>${escapeHtml(labels[reading.status])}</strong>, ${escapeHtml(dateLabel(reading.started_at))}${reading.finished_at ? ` – ${escapeHtml(dateLabel(reading.finished_at))}` : ''}</p>${progress.length ? progress.map(p => `<div class="history-item"><span>${reading.unit === 'percent' ? `${p.value}%` : `Page ${p.value}`}${p.note ? `, ${escapeHtml(p.note)}` : ''}<br><small>${escapeHtml(dateLabel(p.recorded_at))}</small></span><span><button data-edit-progress="${p.id}">Edit</button><button data-delete-progress="${p.id}">Delete</button></span></div>`).join('') : '<p>No progress entries yet.</p>'}</div>`).join('') : '<p>You have not started this book yet.</p>';
-  $('#detail-content').innerHTML = `<div class="dialog-head"><p class="eyebrow">${escapeHtml(labels[book.status] || 'Book')}</p><button class="icon-button close-dialog" type="button" aria-label="Close">×</button></div><div class="detail-top">${coverHtml(book, 'detail-cover')}<div class="detail-info"><h2>${escapeHtml(book.title)}</h2><p>${escapeHtml(book.authors || 'Unknown author')}</p><p>${metadata}</p>${book.topics ? `<p class="detail-topics">${escapeHtml(book.topics.split(',').map(topicLabel).join(', '))}</p>` : ''}${book.rating ? `<p aria-label="${book.rating} out of 5 stars">${'★'.repeat(book.rating)}${'☆'.repeat(5-book.rating)}</p>` : ''}${latest ? `<div class="progress-line"><span style="width:${progressPct(book,latest)}%"></span></div><p>${readingText(book, latest)}</p>` : ''}<div class="detail-actions">${progressControls}</div></div></div><div class="detail-actions" style="margin-top:22px"><button class="text-link" data-action="edit-rating">${book.rating ? 'Edit rating' : 'Add rating'}</button><button class="text-link" data-action="edit-book">Edit book</button><button class="text-link" data-action="delete-book">Remove book</button>${book.work_id ? `<a class="text-link" href="https://openlibrary.org/works/${escapeHtml(book.work_id)}" target="_blank" rel="noopener noreferrer">View on Open Library ↗</a>` : ''}</div>${book.description ? `<section class="detail-section"><h3>About this book</h3><p>${escapeHtml(book.description)}</p></section>` : ''}${book.tags ? `<section class="detail-section"><h3>Tags</h3><p>${escapeHtml(book.tags)}</p></section>` : ''}${book.review ? `<section class="detail-section"><h3>Your review</h3><p>${escapeHtml(book.review)}</p></section>` : ''}${book.notes ? `<section class="detail-section"><h3>Notes</h3><p>${escapeHtml(book.notes)}</p></section>` : ''}<section class="detail-section"><h3>Reading history</h3>${history}</section>`;
+  const pencil = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13 7 4 4"/></svg>';
+  const bin = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 7V4h4v3m4 0-1 13H7L6 7M10 10v7m4-7v7"/></svg>';
+  const ratingOptions = ['<option value="">No rating</option>', ...Array.from({length:10}, (_, i) => `<option value="${i + 1}"${book.rating === i + 1 ? ' selected' : ''}>${i + 1} / 10</option>`)].join('');
+  $('#detail-content').innerHTML = `
+    <div class="dialog-head"><p class="eyebrow">${escapeHtml(labels[book.status] || 'Book')}</p><button class="icon-button close-dialog" type="button" aria-label="Close">×</button></div>
+    <div class="detail-top">${coverHtml(book, 'detail-cover')}<div class="detail-info">
+      <div class="detail-title-row"><h2>${escapeHtml(book.title)}</h2><div class="detail-title-actions"><button class="detail-icon-button" type="button" data-action="edit-book" aria-label="Edit ${escapeHtml(book.title)}" title="Edit book">${pencil}</button><button class="detail-icon-button danger" type="button" data-action="delete-book" aria-label="Remove ${escapeHtml(book.title)}" title="Remove book">${bin}</button></div></div>
+      <p>${escapeHtml(book.authors || 'Unknown author')}</p><p>${metadata}</p>
+      ${book.topics ? `<p class="detail-topics">${escapeHtml(book.topics.split(',').map(topicLabel).join(', '))}</p>` : ''}
+      <label class="detail-rating">Your rating <select id="detail-rating" aria-label="Your rating from 1 to 10">${ratingOptions}</select></label>
+      ${latest ? `<div class="progress-line"><span style="width:${progressPct(book,latest)}%"></span></div><p>${readingText(book, latest)}</p>` : ''}
+      <div class="detail-actions">${progressControls}</div>
+    </div></div>
+    ${book.description ? `<section class="detail-section"><h3>About this book</h3><p>${escapeHtml(book.description)}</p></section>` : ''}
+    ${book.tags ? `<section class="detail-section"><h3>Tags</h3><p>${escapeHtml(book.tags)}</p></section>` : ''}
+    ${book.review ? `<section class="detail-section"><h3>Your review</h3><p>${escapeHtml(book.review)}</p></section>` : ''}
+    ${book.notes ? `<section class="detail-section"><h3>Notes</h3><p>${escapeHtml(book.notes)}</p></section>` : ''}`;
 }
 function openProgress(entry = null) {
   const {book, readings} = state.selected; const r = readings.find(x => x.progress.some(p => p.id === entry?.id))?.reading || readings[0]?.reading;
@@ -534,16 +548,35 @@ document.addEventListener('click', async event => {
     const name = action.dataset.action;
     if (name === 'manual') { openBookForm(); return; }
     if (name === 'edit-book') { const b = state.selected.book; $('#detail-dialog').close(); openBookForm(b); return; }
-    if (name === 'edit-rating') { const b = state.selected.book; $('#detail-dialog').close(); openBookForm(b, true); return; }
     if (name === 'delete-book') { const b = state.selected.book; if (!confirm(`Remove “${b.title}” and all its reading history?`)) return; try { await api(`/api/books/${b.id}`, {method:'DELETE'}); $('#detail-dialog').close(); await refresh(); notify('Book removed'); } catch(e) { notify(e.message,true); } return; }
     if (name === 'start') { try { await api(`/api/books/${state.selected.book.id}/readings`, jsonRequest('POST',{unit:$('#unit-select').value})); state.selected = await api(`/api/books/${state.selected.book.id}`); renderDetail(); await refresh(); notify('Reading started'); } catch(e) { notify(e.message,true); } return; }
     if (name === 'progress') { openProgress(); return; }
   }
   const status = event.target.closest('[data-status]'); if (status) { try { await api(`/api/readings/${state.selected.readings[0].reading.id}`,jsonRequest('PATCH',{status:status.dataset.status})); state.selected = await api(`/api/books/${state.selected.book.id}`); renderDetail(); await refresh(); notify('Status updated'); } catch(e) { notify(e.message,true); } return; }
-  const edit = event.target.closest('[data-edit-progress]'); if (edit) { const p = state.selected.readings.flatMap(x => x.progress).find(p => p.id === Number(edit.dataset.editProgress)); openProgress(p); return; }
-  const del = event.target.closest('[data-delete-progress]'); if (del) { if (!confirm('Delete this progress entry?')) return; try { await api(`/api/progress/${del.dataset.deleteProgress}`,{method:'DELETE'}); state.selected = await api(`/api/books/${state.selected.book.id}`); renderDetail(); await refresh(); notify('Entry deleted'); } catch(e) { notify(e.message,true); } }
 });
-document.addEventListener('change', event => { const input = event.target.closest('[data-page-input]'); if (!input) return; if (input.value.trim() === '') { notify('Enter your current page', true); renderDashboard(); return; } saveInlineProgress(Number(input.dataset.pageInput), Number(input.value)); });
+document.addEventListener('change', async event => {
+  if (event.target.id === 'detail-rating') {
+    const input = event.target;
+    const oldRating = state.selected.book.rating;
+    input.disabled = true;
+    try {
+      const rating = input.value ? Number(input.value) : null;
+      state.selected.book = await api(`/api/books/${state.selected.book.id}/rating`, jsonRequest('PATCH', {rating}));
+      await refresh();
+      renderDetail();
+      notify('Rating saved');
+    } catch (error) {
+      input.value = oldRating ?? '';
+      input.disabled = false;
+      notify(error.message, true);
+    }
+    return;
+  }
+  const input = event.target.closest('[data-page-input]');
+  if (!input) return;
+  if (input.value.trim() === '') { notify('Enter your current page', true); renderDashboard(); return; }
+  saveInlineProgress(Number(input.dataset.pageInput), Number(input.value));
+});
 document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.book-row')) { e.preventDefault(); e.target.click(); } });
 $('#book-form').addEventListener('submit', async e => { e.preventDefault(); const payload = bookPayload(e.currentTarget); try { const b = await api(state.bookEdit ? `/api/books/${state.bookEdit.id}` : '/api/books',jsonRequest(state.bookEdit ? 'PUT':'POST',payload)); $('#book-dialog').close(); await refresh(); notify('Book saved'); openDetail(b.id); } catch(err) { notify(err.message,true); } });
 $('#page-count-form').addEventListener('submit', e => { e.preventDefault(); if (!state.pendingEdition) return; const count = Number(e.currentTarget.elements.page_count.value); if (!Number.isInteger(count) || count < 1) return; createImportedBook({...state.pendingEdition, page_count: count}); });

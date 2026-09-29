@@ -249,10 +249,6 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .book-topic-picker summary { color: var(--ink); font-size: 12px; font-weight: 600; cursor: pointer; }
 .book-topic-picker p { margin: 9px 0; color: var(--muted); font-size: 11px; }
 .book-topic-picker .topic-groups { max-height: 220px; overflow: auto; }
-#book-dialog.rating-only { width: min(420px, calc(100vw - 24px)); }
-#book-dialog.rating-only .form-grid > :not(.rating-field) { display: none; }
-#book-dialog.rating-only .rating-field { grid-column: 1 / -1; }
-#book-dialog:not(.rating-only) .rating-field { display: none; }
 .form-grid textarea { resize: vertical; }
 .dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
 .detail-dialog { width: min(760px, calc(100vw - 24px)); }
@@ -276,13 +272,19 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .detail-info { min-width: 0; flex: 1; }
 .detail-info h2 { margin: 0 0 8px; font-size: 30px; line-height: 1.1; letter-spacing: -.035em; }
 .detail-info p { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+.detail-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.detail-title-row h2 { min-width: 0; overflow-wrap: anywhere; }
+.detail-title-actions { display: flex; gap: 4px; flex: none; }
+.detail-icon-button { display: grid; place-items: center; width: 34px; height: 34px; padding: 7px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+.detail-icon-button svg { width: 19px; height: 19px; }
+.detail-icon-button:hover, .detail-icon-button:focus-visible { border-color: var(--line); background: var(--surface); color: var(--ink); }
+.detail-icon-button.danger:hover, .detail-icon-button.danger:focus-visible { color: #9a3f35; }
+.detail-rating { display: inline-flex; align-items: center; gap: 10px; margin: 2px 0 10px; color: var(--muted); font-size: 12px; }
+.detail-rating select { min-width: 126px; height: 34px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--ink); font: inherit; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 18px; }
 .detail-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--line); }
 .detail-section h3 { margin: 0 0 10px; font-size: 17px; }
 .detail-section p { color: #4f6574; font-size: 12px; line-height: 1.55; }
-.history-item { display: flex; justify-content: space-between; gap: 11px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
-.history-item small { color: var(--muted); }
-.history-item button { border: 0; background: none; color: var(--accent); font-size: 11px; }
 .small-dialog { width: min(470px, calc(100vw - 24px)); }
 .muted { color: var(--muted); font-size: 12px; }
 .tiny { font-size: 10px; }
