@@ -16,10 +16,13 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
+body.dialog-open { position: fixed; top: var(--locked-scroll-top); left: 0; width: 100%; overflow: hidden; padding-right: var(--scrollbar-gap); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
+button, a, [data-open] { -webkit-tap-highlight-color: transparent; }
 a { color: inherit; text-decoration: none; }
 [hidden] { display: none !important; }
+:focus:not(:focus-visible) { outline: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
@@ -48,10 +51,8 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .reading-stack { display: grid; gap: 14px; }
 .reading-card { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(225px, 1fr); gap: 15px; }
 .reading-book, .reading-page { min-height: 202px; border: 2px solid #8aa2b1; border-radius: 4px; background: var(--surface); }
-.reading-book { display: grid; grid-template-columns: 94px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; align-items: start; column-gap: 19px; padding: 23px 27px; color: var(--ink); text-align: left; }
-.reading-cover-button { grid-column: 1; grid-row: 1 / 3; align-self: center; width: 94px; padding: 0; border: 0; background: none; cursor: pointer; }
-.reading-cover-button:hover .reading-cover, .reading-cover-button:focus-visible .reading-cover { box-shadow: 0 0 0 3px #91b2c4, 2px 4px 9px #173f5624; }
-.reading-cover { width: 94px; height: 132px; overflow: hidden; background: var(--soft); box-shadow: 2px 4px 9px #173f5624; }
+.reading-book { display: grid; grid-template-columns: 94px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; align-items: start; column-gap: 19px; padding: 23px 27px; color: var(--ink); text-align: left; cursor: pointer; }
+.reading-cover { grid-column: 1; grid-row: 1 / 3; align-self: center; width: 94px; height: 132px; overflow: hidden; background: var(--soft); }
 .reading-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .reading-cover .cover-fallback { font-size: 12px; }
 .reading-book strong { grid-column: 2; grid-row: 1; align-self: end; display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; margin: 0 0 3px; font-size: clamp(21px, 2.5vw, 32px); font-weight: 600; line-height: 1.15; letter-spacing: -.035em; overflow-wrap: anywhere; }
@@ -74,15 +75,14 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .plan-section, .home-recommend-section, .shelf-section, .summary-section { margin-top: 65px; padding-top: 25px; border-top: 1px solid var(--line); }
 .plan-section .section-head, .home-recommend-section .section-head, .shelf-section .section-head, .summary-section .section-head { margin-bottom: 17px; }
 .planned-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 350px), 1fr)); gap: 10px; }
-.planned-card { box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: min(100%, clamp(320px, 58vw, 420px)); min-width: 0; padding: 15px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
-.planned-cover-button { flex: none; width: 68px; padding: 0; border: 0; background: none; }
-.planned-cover-button:hover .planned-cover, .planned-cover-button:focus-visible .planned-cover { box-shadow: 0 0 0 3px #91b2c4, 2px 4px 9px #173f5624; }
-.planned-cover { width: 68px; height: 96px; overflow: hidden; background: var(--soft); box-shadow: 2px 4px 9px #173f5624; }
+.planned-card { box-sizing: border-box; display: flex; align-items: center; width: min(100%, clamp(320px, 58vw, 420px)); min-width: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); cursor: pointer; }
+.planned-main { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 0; min-height: 126px; padding: 15px; border: 0; background: none; color: inherit; text-align: left; }
+.planned-cover { flex: none; width: 68px; height: 96px; overflow: hidden; background: var(--soft); }
 .planned-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .planned-info { display: grid; flex: 1; gap: 6px; min-width: 0; }
 .planned-info strong { overflow-wrap: anywhere; font-size: 17px; line-height: 1.2; }
 .planned-info span { color: var(--muted); font-size: 12px; }
-.planned-buy-form { flex: none; margin-left: auto; }
+.planned-buy-form { flex: none; margin-right: 15px; }
 .planned-buy { padding: 7px 12px; border: 1px solid var(--accent); border-radius: 3px; background: var(--accent); color: #fff; font: 600 12px var(--mono); }
 .planned-buy:hover { background: #164a69; }
 .home-recommend-grid { display: grid; grid-auto-flow: column; grid-auto-columns: 160px; gap: 9px; overflow-x: auto; padding: 2px 2px 13px; scrollbar-width: thin; }
@@ -236,8 +236,11 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .empty-state strong { font-size: 18px; }
 .empty-state p { margin: 8px 0 18px; color: var(--muted); font-size: 12px; }
 
-.dialog { width: min(610px, calc(100vw - 24px)); max-height: min(90vh, 900px); overflow: auto; padding: 25px; border: 1px solid #7895a7; border-radius: 5px; background: var(--paper); color: var(--ink); box-shadow: 0 25px 80px #102b3e5c; }
-.dialog::backdrop { background: #0e2337a8; }
+.dialog { --dialog-pad: 25px; width: min(610px, calc(100vw - 24px)); max-height: min(90vh, 900px); overflow: hidden; padding: var(--dialog-pad); border: 1px solid #7895a7; border-radius: 5px; background: var(--paper); color: var(--ink); }
+.dialog[open] { display: flex; flex-direction: column; }
+.dialog::backdrop { background: transparent; }
+.dialog-close-row { display: flex; justify-content: flex-end; flex: none; }
+.dialog-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
 .dialog-head h2 { margin: 0; font-size: 25px; letter-spacing: -.04em; }
 .icon-button { padding: 0 4px; border: 0; background: none; color: var(--muted); font-size: 27px; line-height: 1; }
@@ -253,7 +256,6 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
 .detail-dialog { width: min(760px, calc(100vw - 24px)); }
 .browse-dialog { width: min(690px, calc(100vw - 28px)); }
-.browse-dialog::backdrop { background: #0e233780; }
 .browse-dialog-top { display: grid; grid-template-columns: 132px minmax(0, 1fr); align-items: start; gap: 22px; }
 .browse-dialog-cover { width: 132px; height: 187px; overflow: hidden; background: var(--soft); }
 .browse-dialog-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
@@ -301,7 +303,6 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
   .reading-card { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px; }
   .reading-book, .reading-page { min-height: 178px; }
   .reading-book { grid-template-columns: 62px minmax(0, 1fr); column-gap: 10px; padding: 16px; }
-  .reading-cover-button { width: 62px; }
   .reading-cover { width: 62px; height: 88px; }
   .reading-page { padding: 15px; }
   .reading-book strong { font-size: 20px; }
@@ -329,8 +330,7 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
   main { padding: 26px 16px 70px; }
   .reading-book, .reading-page { min-height: 171px; }
   .reading-book { display: flex; flex-direction: column; align-items: flex-start; padding: 13px; }
-  .reading-cover-button { align-self: flex-start; width: 53px; }
-  .reading-cover { width: 53px; height: 73px; }
+  .reading-cover { align-self: flex-start; width: 53px; height: 73px; }
   .reading-page { padding: 12px; }
   .reading-book strong { align-self: flex-start; -webkit-line-clamp: 3; margin-top: 9px; font-size: 18px; }
   .reading-author { font-size: 11px; }
@@ -355,5 +355,5 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
   .detail-info h2 { font-size: 23px; }
   .form-grid { grid-template-columns: 1fr; }
   .form-grid label.wide { grid-column: auto; }
-  .dialog { padding: 17px; }
+  .dialog { --dialog-pad: 17px; }
 }
