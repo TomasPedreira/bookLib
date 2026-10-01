@@ -264,6 +264,11 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .browse-dialog-info h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0 0 8px; font-size: clamp(24px, 3vw, 32px); line-height: 1.15; overflow-wrap: anywhere; }
 .browse-dialog-info > p { margin: 0 0 7px; color: var(--muted); font-size: 13px; }
 .browse-dialog-info > p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.browse-dialog-topics { flex: none; margin-top: 12px; }
+.browse-dialog-topics h3 { margin: 0 0 6px; font-size: 14px; }
+.browse-topic-list { display: flex; gap: 6px; min-width: 0; overflow-x: auto; overscroll-behavior: contain; padding-bottom: 4px; }
+.browse-topic { flex: none; padding: 4px 8px; border: 1px solid var(--line); border-radius: 3px; background: var(--soft); font-size: 12px; }
+.browse-topic-list .muted { font-size: 12px; }
 .browse-dialog-description { display: flex; flex: 1; min-height: 0; flex-direction: column; margin-top: 18px; }
 .browse-dialog-description h3 { flex: none; margin: 0 0 7px; font-size: 14px; }
 .browse-synopsis { flex: 1; min-height: 0; margin: 0; overflow-y: auto; overscroll-behavior: contain; white-space: pre-line; color: var(--ink); line-height: 1.5; }

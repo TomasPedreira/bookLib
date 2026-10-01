@@ -34,7 +34,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
       if (name === 'list_books') return books.map(book => ({ book, reading: sessions.get(book.id)?.reading || null }));
       if (name === 'stats') return { total: books.length, want: books.length, reading: 0, paused: 0, completed: 0, abandoned: 0, reading_sessions: 0, pages_read: 0, daily_pages: [] };
       if (name === 'recommendations') return { items: [{ work_id: '/works/OL82563W', title: 'Harry Potter and the Philosopher’s Stone', authors: ['J. K. Rowling'], year: 1997 }] };
-      if (name === 'work_details') return { description: 'A long Harry Potter synopsis. '.repeat(300) };
+      if (name === 'work_details') return { description: 'A long Harry Potter synopsis. '.repeat(300), genres: ['fantasy', 'science_fiction', 'fantasy', 'unknown_topic'] };
       if (name === 'editions') return { total: 30, items: Array.from({ length: 30 }, (_, i) => ({ edition_id: `/books/OL${i}M`, title: `Harry Potter edition ${i}`, language: 'eng', page_count: 300 })) };
       if (name === 'create_book') {
         const book = { ...args.b, id: books.length + 1, status: 'want', created_at: '2026-10-01', updated_at: '2026-10-01' };
@@ -101,6 +101,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     await waitFor(() => $('[data-home-recommend]'));
     $('[data-home-recommend]').click();
     await waitFor(() => $('#browse-dialog-synopsis')?.textContent.startsWith('A long Harry Potter'));
+    assert.deepEqual([...window.document.querySelectorAll('.browse-topic')].map(topic => topic.textContent), ['Fantasy', 'Sci-fi']);
     // Long descriptions and edition lists scroll independently of the footer.
     assert.equal($('#browse-dialog-actions').parentElement, $('#browse-dialog'));
     assert.equal($('#browse-dialog-content').closest('.dialog-scroll'), null);
@@ -115,6 +116,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     assert.equal($('#browse-dialog-content').hidden, false);
     assert.equal($('#browse-dialog-editions').hidden, true);
     assert.equal($('#browse-view-editions').textContent, 'View editions');
+    assert.equal($('#browse-topic-list').textContent, 'FantasySci-fi');
     submit('#browse-dialog-actions form');
     await waitFor(() => calls.some(c => c.name === 'plugin:opener|open_url' && c.args.url.startsWith('https://www.amazon.es/s?')));
     assert.equal(calls.some(c => c.name.includes('/api/')), false);

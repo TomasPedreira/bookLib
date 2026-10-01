@@ -208,7 +208,7 @@ pub async fn work_details(s: &AppState, id: String) -> ServiceResult<Value> {
         .or_else(|| work["description"]["value"].as_str())
         .map(|text| text.trim().chars().take(5_000).collect::<String>())
         .filter(|text| !text.is_empty());
-    Ok(json!({"description": description}))
+    Ok(json!({"description": description, "genres": work_genre_names(&work)}))
 }
 
 async fn fetch(state: &AppState, url: &str, params: &[(&str, &str)]) -> Result<Value, AppError> {
