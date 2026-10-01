@@ -360,12 +360,13 @@ async function openBrowseWork(item) {
   state.catalogItems = [item];
   state.work = item;
   state.editionOffset = 0;
+  $('#browse-dialog-content').hidden = false;
   $('#browse-dialog-editions').hidden = true;
   $('#browse-dialog-edition-results').innerHTML = '';
   const serial = ++browseDialogSerial;
   browseDialogEditionSerial++;
   const meta = [item.genre ? topicLabel(item.genre) : null, item.year].filter(Boolean).join(', ');
-  $('#browse-dialog-content').innerHTML = `<div class="browse-dialog-top">${coverHtml(item, 'browse-dialog-cover')}<div class="browse-dialog-info"><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</p>${meta ? `<p>${escapeHtml(meta)}</p>` : ''}${item.ratings_count >= 5 ? `<p>★ ${Number(item.ratings_average).toFixed(1)}, ${item.ratings_count} ratings</p>` : ''}<h3>Synopsis</h3><p id="browse-dialog-synopsis" class="browse-synopsis">Loading synopsis…</p></div></div>`;
+  $('#browse-dialog-content').innerHTML = `<div class="browse-dialog-top">${coverHtml(item, 'browse-dialog-cover')}<div class="browse-dialog-info"><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</p>${meta ? `<p>${escapeHtml(meta)}</p>` : ''}${item.ratings_count >= 5 ? `<p>★ ${Number(item.ratings_average).toFixed(1)}, ${item.ratings_count} ratings</p>` : ''}</div></div><section class="browse-dialog-description"><h3>Synopsis</h3><p id="browse-dialog-synopsis" class="browse-synopsis">Loading synopsis…</p></section>`;
   $('#browse-dialog-actions').innerHTML = `<button id="browse-view-editions" class="secondary-button" type="button">View editions</button><form action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(item.title)}"><input type="hidden" name="i" value="stripbooks"><button class="secondary-button" type="submit" aria-label="Search prices for ${escapeHtml(item.title)} on Amazon">Prices</button></form>`;
   recordViewedWork(item.work_id, item.genre);
   openDialog($('#browse-dialog'));
@@ -381,7 +382,9 @@ async function loadBrowseDialogEditions(append = false) {
   const serial = ++browseDialogEditionSerial;
   const work = state.work;
   const area = $('#browse-dialog-editions');
+  $('#browse-dialog-content').hidden = true;
   area.hidden = false;
+  $('#browse-view-editions').textContent = 'Book details';
   if (!append) { state.editionOffset = 0; $('#browse-dialog-edition-results').innerHTML = '<p class="muted">Loading editions…</p>'; }
   $('#browse-dialog-more-editions').hidden = true;
   try {
@@ -508,7 +511,14 @@ document.addEventListener('click', async event => {
   if (bookTopic) { const selected = $$('[data-book-topic][aria-pressed="true"]', $('#book-form')).map(button => button.dataset.bookTopic); const key = bookTopic.dataset.bookTopic; if (selected.includes(key)) renderBookTopics(selected.filter(value => value !== key)); else if (selected.length < 4) renderBookTopics([...selected, key]); else notify('Choose up to 4 topics', true); return; }
   const recommendation = event.target.closest('[data-recommend-work]');
   if (recommendation) { openBrowseWork(state.visibleRecommendations[Number(recommendation.dataset.recommendWork)]); return; }
-  if (event.target.closest('#browse-view-editions')) { await loadBrowseDialogEditions(); return; }
+  if (event.target.closest('#browse-view-editions')) {
+    if ($('#browse-dialog-content').hidden) {
+      $('#browse-dialog-editions').hidden = true;
+      $('#browse-dialog-content').hidden = false;
+      $('#browse-view-editions').textContent = 'View editions';
+    } else { await loadBrowseDialogEditions(); }
+    return;
+  }
   const homeRecommendation = event.target.closest('[data-home-recommend]');
   if (homeRecommendation) { openBrowseWork(state.visibleHomeRecommendations[Number(homeRecommendation.dataset.homeRecommend)]); return; }
   const step = event.target.closest('[data-step]'); if (step) { const id = Number(step.dataset.book); const item = state.books.find(({book}) => book.id === id); if (item?.reading) await saveInlineProgress(id, item.reading.current_value + Number(step.dataset.step)); return; }

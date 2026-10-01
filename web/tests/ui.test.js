@@ -103,11 +103,18 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     await waitFor(() => $('#browse-dialog-synopsis')?.textContent.startsWith('A long Harry Potter'));
     // Long descriptions and edition lists scroll independently of the footer.
     assert.equal($('#browse-dialog-actions').parentElement, $('#browse-dialog'));
+    assert.equal($('#browse-dialog-content').closest('.dialog-scroll'), null);
     assert.equal($('#browse-view-editions').closest('.dialog-scroll'), null);
     $('#browse-view-editions').click();
     await waitFor(() => $('#browse-dialog-edition-results').children.length === 30);
     assert.equal($('#browse-dialog-editions').hidden, false);
+    assert.equal($('#browse-dialog-content').hidden, true);
+    assert.equal($('#browse-view-editions').textContent, 'Book details');
     assert.equal($('#browse-dialog-actions form').closest('.dialog-scroll'), null);
+    $('#browse-view-editions').click();
+    assert.equal($('#browse-dialog-content').hidden, false);
+    assert.equal($('#browse-dialog-editions').hidden, true);
+    assert.equal($('#browse-view-editions').textContent, 'View editions');
     submit('#browse-dialog-actions form');
     await waitFor(() => calls.some(c => c.name === 'plugin:opener|open_url' && c.args.url.startsWith('https://www.amazon.es/s?')));
     assert.equal(calls.some(c => c.name.includes('/api/')), false);

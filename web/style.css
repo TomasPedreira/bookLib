@@ -255,18 +255,24 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
 .detail-dialog { width: min(760px, calc(100vw - 24px)); }
 .browse-dialog { --browse-dialog-height: min(760px, calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom))); width: min(690px, calc(100vw - 28px)); height: var(--browse-dialog-height); max-height: var(--browse-dialog-height); }
-.browse-dialog-body { flex: 1; }
+.browse-dialog-body { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+#browse-dialog-content:not([hidden]) { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 .browse-dialog-top { display: grid; grid-template-columns: 132px minmax(0, 1fr); align-items: start; gap: 22px; }
 .browse-dialog-cover { width: 132px; height: 187px; overflow: hidden; background: var(--soft); }
 .browse-dialog-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
-.browse-dialog-info h2 { margin: 0 0 8px; font-size: clamp(24px, 3vw, 32px); line-height: 1.15; overflow-wrap: anywhere; }
+.browse-dialog-info { min-width: 0; }
+.browse-dialog-info h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0 0 8px; font-size: clamp(24px, 3vw, 32px); line-height: 1.15; overflow-wrap: anywhere; }
 .browse-dialog-info > p { margin: 0 0 7px; color: var(--muted); font-size: 13px; }
-.browse-dialog-info h3 { margin: 18px 0 7px; font-size: 14px; }
-.browse-synopsis { max-height: 220px; overflow: auto; white-space: pre-line; color: var(--ink) !important; line-height: 1.5; }
+.browse-dialog-info > p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.browse-dialog-description { display: flex; flex: 1; min-height: 0; flex-direction: column; margin-top: 18px; }
+.browse-dialog-description h3 { flex: none; margin: 0 0 7px; font-size: 14px; }
+.browse-synopsis { flex: 1; min-height: 0; margin: 0; overflow-y: auto; overscroll-behavior: contain; white-space: pre-line; color: var(--ink); line-height: 1.5; }
 .browse-dialog-actions { display: flex; flex: none; flex-wrap: wrap; gap: 9px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
 .browse-dialog-actions form { margin: 0; }
-#browse-dialog-editions { margin-top: 25px; padding-top: 20px; border-top: 1px solid var(--line); }
+#browse-dialog-editions:not([hidden]) { display: flex; flex: 1; min-width: 0; min-height: 0; flex-direction: column; }
 #browse-dialog-editions h3 { margin: 0 0 13px; font-size: 18px; }
+#browse-dialog-edition-results { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
+#browse-dialog-more-editions { flex: none; align-self: flex-start; }
 #browse-dialog-more-editions { margin-top: 14px; }
 .detail-top { display: flex; gap: 22px; }
 .detail-cover { width: 140px; height: 200px; flex: none; overflow: hidden; background: var(--soft); }
@@ -346,7 +352,7 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
   .recommend-card .mini-cover { width: 72px; height: 100px; }
   .recommend-info strong { font-size: 15px; }
   .recommend-info span, .recommend-info small { font-size: 11px; }
-  .browse-dialog-top { grid-template-columns: 1fr; gap: 14px; }
+  .browse-dialog-top { grid-template-columns: 96px minmax(0, 1fr); gap: 14px; }
   .browse-dialog-cover { width: 96px; height: 135px; }
   .catalog-meta { flex-basis: calc(100% - 70px); }
   .catalog-item button, .edition-item button { margin-left: auto; }
@@ -356,6 +362,15 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
   .form-grid { grid-template-columns: 1fr; }
   .form-grid label.wide { grid-column: auto; }
   .dialog { --dialog-pad: 17px; }
+}
+
+@media (max-height: 480px) {
+  .browse-dialog { --dialog-pad: 12px; }
+  .browse-dialog-top { grid-template-columns: 48px minmax(0, 1fr); gap: 12px; }
+  .browse-dialog-cover { width: 48px; height: 68px; }
+  .browse-dialog-info h2 { -webkit-line-clamp: 2; font-size: 18px; margin-bottom: 4px; }
+  .browse-dialog-info > p { margin-bottom: 3px; font-size: 11px; }
+  .browse-dialog-description { margin-top: 8px; }
 }
 
 @media (pointer: coarse) {
