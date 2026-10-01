@@ -157,11 +157,16 @@ async function loadHomeRecommendations() {
     $('#home-recommend-message').textContent = state.visibleHomeRecommendations.length ? '' : 'No matches yet. Explore more in Browse.';
   } catch { if (serial === homeRecommendationSerial) $('#home-recommend-message').textContent = 'Suggestions unavailable right now. Try Browse.'; }
 }
+const activityMobile = window.matchMedia?.('(max-width: 700px)');
+activityMobile?.addEventListener('change', () => { if (state.stats) renderReadingActivity(); });
+
 function renderReadingActivity() {
   const end = new Date();
   end.setHours(0, 0, 0, 0);
   const first = new Date(end);
-  first.setDate(first.getDate() - 364);
+  const compact = activityMobile?.matches;
+  const period = compact ? 'the last 13 weeks' : 'the last 12 months';
+  first.setDate(first.getDate() - (compact ? 84 + end.getDay() : 364));
   const start = new Date(first);
   start.setDate(start.getDate() - start.getDay());
   const dateKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -178,9 +183,10 @@ function renderReadingActivity() {
     if (date >= firstKey) { pagesRead += pages; if (pages) activeDays++; }
   }
   $('#activity-grid').innerHTML = days.join('');
-  $('#activity-months').style.setProperty('--activity-weeks', Math.ceil(days.length / 7));
+  $('.activity-scroll').style.setProperty('--activity-weeks', Math.ceil(days.length / 7));
+  $('#activity-grid').setAttribute('aria-label', `Pages read by day in ${period}`);
   $('#activity-months').innerHTML = months.join('');
-  $('#activity-summary').textContent = `${pagesRead} pages, ${activeDays} active ${activeDays === 1 ? 'day' : 'days'} in the last 12 months`;
+  $('#activity-summary').textContent = `${pagesRead} pages, ${activeDays} active ${activeDays === 1 ? 'day' : 'days'} in ${period}`;
 }
 function renderDashboard() {
   const st = state.stats;

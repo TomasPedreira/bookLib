@@ -9,6 +9,9 @@ test('UI adds a book, records progress, handles back and saves a native backup',
   for (const name of ['window', 'document', 'location', 'history', 'localStorage', 'FormData']) {
     globalThis[name] = name === 'window' ? window : window[name];
   }
+  const activityViewport = new window.EventTarget();
+  activityViewport.matches = true;
+  window.matchMedia = () => activityViewport;
   window.scrollTo = () => {};
   window.HTMLElement.prototype.scrollTo = () => {};
   window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
@@ -68,6 +71,19 @@ test('UI adds a book, records progress, handles back and saves a native backup',
   try {
     await import('../app.js');
     await waitFor(() => calls.some(c => c.name === 'stats'));
+    await waitFor(() => $('#activity-grid').children.length > 0);
+    assert.equal($('.summary-section').tagName, 'DETAILS');
+    assert.equal($('.summary-section').open, false);
+    assert.equal($('.activity-scroll').style.getPropertyValue('--activity-weeks'), '13');
+    assert.match($('#activity-summary').textContent, /last 13 weeks/);
+    assert.match($('#activity-grid').getAttribute('aria-label'), /last 13 weeks/);
+    activityViewport.matches = false;
+    activityViewport.dispatchEvent(new window.Event('change'));
+    assert.ok($('#activity-grid').children.length >= 365);
+    assert.match($('#activity-summary').textContent, /last 12 months/);
+    activityViewport.matches = true;
+    activityViewport.dispatchEvent(new window.Event('change'));
+    assert.equal($('.activity-scroll').style.getPropertyValue('--activity-weeks'), '13');
     $('#manual-add').click();
     $('#book-form').elements.title.value = 'Android UI test';
     $('#book-form').elements.page_count.value = '200';

@@ -1,6 +1,6 @@
 {
   "name": "booklib-android",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "build": "vite build",
     "test": "node --test web/tests/*.test.js",
     "tauri": "tauri",
+    "icons": "node scripts/icons.mjs",
     "android:init": "tauri android init",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build --debug --apk --target aarch64"

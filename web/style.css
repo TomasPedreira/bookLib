@@ -170,6 +170,14 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .row-action { text-align: right; color: var(--accent); font: 20px var(--mono); }
 .row-update { padding: 7px; border: 1px solid #94b4c4; border-radius: 3px; background: var(--soft); color: var(--accent); font: 600 10px var(--mono); }
 .row-update:hover { background: #d6eaf2; }
+/* Keep the dashboard quiet until reading insights are requested. */
+.summary-section { min-width: 0; padding-top: 0; }
+.summary-toggle { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; min-height: 60px; padding: 16px 0; cursor: pointer; list-style: none; color: var(--ink); font-weight: 600; }
+.summary-toggle::-webkit-details-marker { display: none; }
+.summary-toggle::after { content: '+'; margin-left: auto; color: var(--accent); font: 22px var(--mono); }
+.summary-section[open] > .summary-toggle::after { content: '−'; }
+.summary-toggle-hint { color: var(--muted); font: 10px var(--mono); }
+.summary-content { padding-top: 12px; min-width: 0; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .stat-card { min-height: 88px; padding: 14px; border: 1px solid var(--line); background: var(--surface); }
 .stat-label { display: block; color: var(--muted); font: 10px var(--mono); }
@@ -405,4 +413,15 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
   input, select, textarea { font-size: 16px; }
   .dialog { max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
   .toast { bottom: calc(20px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 700px) {
+  .activity-scroll { width: 100%; min-width: 0; overflow: visible; }
+  .activity-months { width: auto; grid-template-columns: repeat(var(--activity-weeks), minmax(0, 1fr)); }
+  .activity-chart { width: 100%; }
+  .activity-weekdays { flex: 0 0 26px; }
+  .activity-grid { flex: 1; min-width: 0; width: auto; grid-template-columns: repeat(var(--activity-weeks), minmax(0, 1fr)); grid-auto-columns: auto; }
+  .activity-day { width: 100%; max-width: 20px; }
+  .activity-months span { min-width: 0; overflow: hidden; }
+  .activity-heading span { line-height: 1.6; }
 }
