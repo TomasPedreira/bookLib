@@ -1,8 +1,4 @@
-use crate::{bad, missing, ApiResult, AppError, AppState};
-use axum::{
-    extract::{Path, State},
-    Json,
-};
+use crate::{bad, missing, AppError, AppState, ServiceResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{FromRow, SqlitePool};
@@ -138,10 +134,18 @@ fn validate_book(b: &BookInput) -> Result<(), AppError> {
         return Err(bad("Classificação inválida"));
     }
     if let Some(topics) = b.topics.as_deref() {
-        let selected: Vec<&str> = topics.split(',').filter(|topic| !topic.is_empty()).collect();
+        let selected: Vec<&str> = topics
+            .split(',')
+            .filter(|topic| !topic.is_empty())
+            .collect();
         if selected.len() > 4
-            || selected.iter().any(|topic| !crate::catalog::TOPICS.contains(topic))
-            || selected.iter().enumerate().any(|(index, topic)| selected[..index].contains(topic))
+            || selected
+                .iter()
+                .any(|topic| !crate::catalog::TOPICS.contains(topic))
+            || selected
+                .iter()
+                .enumerate()
+                .any(|(index, topic)| selected[..index].contains(topic))
         {
             return Err(bad("Temas inválidos"));
         }
@@ -176,7 +180,7 @@ fn validate_book(b: &BookInput) -> Result<(), AppError> {
     Ok(())
 }
 
-pub async fn list_books(State(s): State<AppState>) -> ApiResult<Vec<Value>> {
+pub async fn list_books(s: &AppState) -> ServiceResult<Vec<Value>> {
     let books = sqlx::query_as::<_, Book>("SELECT * FROM books ORDER BY updated_at DESC, id DESC")
         .fetch_all(&s.db)
         .await?;
@@ -187,17 +191,15 @@ pub async fn list_books(State(s): State<AppState>) -> ApiResult<Vec<Value>> {
     for r in readings {
         latest.entry(r.book_id).or_insert(r);
     }
-    Ok(Json(
-        books
-            .into_iter()
-            .map(|b| {
-                let r = latest.remove(&b.id);
-                json!({"book": b, "reading": r})
-            })
-            .collect(),
-    ))
+    Ok(books
+        .into_iter()
+        .map(|b| {
+            let r = latest.remove(&b.id);
+            json!({"book": b, "reading": r})
+        })
+        .collect())
 }
-pub async fn get_book(State(s): State<AppState>, Path(id): Path<i64>) -> ApiResult<Value> {
+pub async fn get_book(s: &AppState, id: i64) -> ServiceResult<Value> {
     let b = book(&s.db, id).await?;
     let readings =
         sqlx::query_as::<_, Reading>("SELECT * FROM readings WHERE book_id=? ORDER BY id DESC")
@@ -214,9 +216,9 @@ pub async fn get_book(State(s): State<AppState>, Path(id): Path<i64>) -> ApiResu
         .await?;
         history.push(json!({"reading": r, "progress": entries}));
     }
-    Ok(Json(json!({"book": b, "readings": history})))
+    Ok(json!({"book": b, "readings": history}))
 }
-pub async fn create_book(State(s): State<AppState>, Json(b): Json<BookInput>) -> ApiResult<Book> {
+pub async fn create_book(s: &AppState, b: BookInput) -> ServiceResult<Book> {
     validate_book(&b)?;
     if let Some(ref id) = b.edition_id {
         if sqlx::query_scalar::<_, i64>("SELECT id FROM books WHERE edition_id=?")
@@ -230,7 +232,7 @@ pub async fn create_book(State(s): State<AppState>, Json(b): Json<BookInput>) ->
     }
     let topics = match (&b.topics, &b.work_id) {
         (Some(topics), _) => topics.clone(),
-        (None, Some(work_id)) => match crate::catalog::default_book_topics(&s, work_id).await {
+        (None, Some(work_id)) => match crate::catalog::default_book_topics(s, work_id).await {
             Ok(topics) => topics,
             Err(error) => {
                 tracing::warn!(?error, %work_id, "could not load book topics");
@@ -245,13 +247,9 @@ pub async fn create_book(State(s): State<AppState>, Json(b): Json<BookInput>) ->
         .bind(b.description.unwrap_or_default()).bind(b.source.unwrap_or_else(|| "manual".into()))
         .bind(b.rating).bind(b.review.unwrap_or_default()).bind(b.notes.unwrap_or_default())
         .bind(b.tags.unwrap_or_default()).bind(topics).execute(&s.db).await?.last_insert_rowid();
-    Ok(Json(book(&s.db, id).await?))
+    Ok(book(&s.db, id).await?)
 }
-pub async fn update_book(
-    State(s): State<AppState>,
-    Path(id): Path<i64>,
-    Json(b): Json<BookInput>,
-) -> ApiResult<Book> {
+pub async fn update_book(s: &AppState, id: i64, b: BookInput) -> ServiceResult<Book> {
     book(&s.db, id).await?;
     validate_book(&b)?;
     let mut tx = s.db.begin().await?;
@@ -263,8 +261,16 @@ pub async fn update_book(
     .await?;
     if page_readings > 0 {
         match b.page_count {
-            None => return Err(bad("Não podes remover o número de páginas de um livro com leituras em páginas")),
-            Some(count) if count < largest_value => return Err(bad("O número de páginas não pode ser inferior ao progresso registado")),
+            None => {
+                return Err(bad(
+                    "Não podes remover o número de páginas de um livro com leituras em páginas",
+                ))
+            }
+            Some(count) if count < largest_value => {
+                return Err(bad(
+                    "O número de páginas não pode ser inferior ao progresso registado",
+                ))
+            }
             _ => {}
         }
     }
@@ -274,14 +280,13 @@ pub async fn update_book(
         .bind(b.description.unwrap_or_default()).bind(b.rating).bind(b.review.unwrap_or_default())
         .bind(b.notes.unwrap_or_default()).bind(b.tags.unwrap_or_default()).bind(b.topics.unwrap_or_default()).bind(id).execute(&mut *tx).await?;
     tx.commit().await?;
-    Ok(Json(book(&s.db, id).await?))
+    Ok(book(&s.db, id).await?)
 }
-pub async fn update_rating(
-    State(s): State<AppState>,
-    Path(id): Path<i64>,
-    Json(input): Json<RatingInput>,
-) -> ApiResult<Book> {
-    if input.rating.is_some_and(|rating| !(1..=10).contains(&rating)) {
+pub async fn update_rating(s: &AppState, id: i64, input: RatingInput) -> ServiceResult<Book> {
+    if input
+        .rating
+        .is_some_and(|rating| !(1..=10).contains(&rating))
+    {
         return Err(bad("Classificação inválida"));
     }
     book(&s.db, id).await?;
@@ -290,21 +295,17 @@ pub async fn update_rating(
         .bind(id)
         .execute(&s.db)
         .await?;
-    Ok(Json(book(&s.db, id).await?))
+    Ok(book(&s.db, id).await?)
 }
-pub async fn delete_book(State(s): State<AppState>, Path(id): Path<i64>) -> ApiResult<Value> {
+pub async fn delete_book(s: &AppState, id: i64) -> ServiceResult<Value> {
     book(&s.db, id).await?;
     sqlx::query("DELETE FROM books WHERE id=?")
         .bind(id)
         .execute(&s.db)
         .await?;
-    Ok(Json(json!({"ok": true})))
+    Ok(json!({"ok": true}))
 }
-pub async fn start_reading(
-    State(s): State<AppState>,
-    Path(id): Path<i64>,
-    Json(input): Json<StartReading>,
-) -> ApiResult<Reading> {
+pub async fn start_reading(s: &AppState, id: i64, input: StartReading) -> ServiceResult<Reading> {
     let b = book(&s.db, id).await?;
     if !["pages", "percent"].contains(&input.unit.as_str()) {
         return Err(bad("Unidade inválida"));
@@ -333,13 +334,9 @@ pub async fn start_reading(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(Json(reading(&s.db, rid).await?))
+    Ok(reading(&s.db, rid).await?)
 }
-pub async fn change_reading(
-    State(s): State<AppState>,
-    Path(id): Path<i64>,
-    Json(input): Json<ReadingStatus>,
-) -> ApiResult<Reading> {
+pub async fn change_reading(s: &AppState, id: i64, input: ReadingStatus) -> ServiceResult<Reading> {
     let r = reading(&s.db, id).await?;
     if !["reading", "paused", "completed", "abandoned"].contains(&input.status.as_str()) {
         return Err(bad("Estado inválido"));
@@ -364,7 +361,7 @@ pub async fn change_reading(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(Json(reading(&s.db, id).await?))
+    Ok(reading(&s.db, id).await?)
 }
 
 async fn validate_progress(db: &SqlitePool, id: i64, value: i64) -> Result<Reading, AppError> {
@@ -447,11 +444,7 @@ async fn recalc(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, id: i64) -> Result
         .await?;
     Ok(())
 }
-pub async fn add_progress(
-    State(s): State<AppState>,
-    Path(id): Path<i64>,
-    Json(input): Json<ProgressInput>,
-) -> ApiResult<Progress> {
+pub async fn add_progress(s: &AppState, id: i64, input: ProgressInput) -> ServiceResult<Progress> {
     let r = validate_progress(&s.db, id, input.value).await?;
     if input
         .note
@@ -474,13 +467,9 @@ pub async fn add_progress(
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    Ok(Json(progress(&s.db, pid).await?))
+    Ok(progress(&s.db, pid).await?)
 }
-pub async fn edit_progress(
-    State(s): State<AppState>,
-    Path(id): Path<i64>,
-    Json(input): Json<ProgressInput>,
-) -> ApiResult<Progress> {
+pub async fn edit_progress(s: &AppState, id: i64, input: ProgressInput) -> ServiceResult<Progress> {
     let p = progress(&s.db, id).await?;
     validate_progress(&s.db, p.reading_id, input.value).await?;
     if input
@@ -503,9 +492,9 @@ pub async fn edit_progress(
     .await?;
     recalc(&mut tx, p.reading_id).await?;
     tx.commit().await?;
-    Ok(Json(progress(&s.db, id).await?))
+    Ok(progress(&s.db, id).await?)
 }
-pub async fn delete_progress(State(s): State<AppState>, Path(id): Path<i64>) -> ApiResult<Value> {
+pub async fn delete_progress(s: &AppState, id: i64) -> ServiceResult<Value> {
     let p = progress(&s.db, id).await?;
     let mut tx = s.db.begin().await?;
     sqlx::query("DELETE FROM progress_entries WHERE id=?")
@@ -514,9 +503,9 @@ pub async fn delete_progress(State(s): State<AppState>, Path(id): Path<i64>) -> 
         .await?;
     recalc(&mut tx, p.reading_id).await?;
     tx.commit().await?;
-    Ok(Json(json!({"ok": true})))
+    Ok(json!({"ok": true}))
 }
-pub async fn stats(State(s): State<AppState>) -> ApiResult<Value> {
+pub async fn stats(s: &AppState) -> ServiceResult<Value> {
     let (total, want, reading, paused, completed, abandoned): (i64, i64, i64, i64, i64, i64) =
         sqlx::query_as("SELECT count(*), count(*) FILTER (WHERE status='want'), count(*) FILTER (WHERE status='reading'), count(*) FILTER (WHERE status='paused'), count(*) FILTER (WHERE status='completed'), count(*) FILTER (WHERE status='abandoned') FROM books")
             .fetch_one(&s.db).await?;
@@ -536,21 +525,24 @@ pub async fn stats(State(s): State<AppState>) -> ApiResult<Value> {
             FROM last_per_day WHERE position = 1
          )
          SELECT day, SUM(CASE WHEN value > previous THEN value - previous ELSE 0 END) AS pages
-         FROM changes GROUP BY day ORDER BY day"
-    ).fetch_all(&s.db).await?;
+         FROM changes GROUP BY day ORDER BY day",
+    )
+    .fetch_all(&s.db)
+    .await?;
     let pages: i64 = daily_pages.iter().map(|(_, count)| count).sum();
-    let daily_pages: Vec<Value> = daily_pages.into_iter()
+    let daily_pages: Vec<Value> = daily_pages
+        .into_iter()
         .map(|(date, pages)| json!({"date": date, "pages": pages}))
         .collect();
-    Ok(Json(json!({
+    Ok(json!({
         "total": total, "want": want, "reading": reading,
         "paused": paused, "completed": completed,
         "abandoned": abandoned,
         "reading_sessions": reading_sessions, "pages_read": pages,
         "daily_pages": daily_pages
-    })))
+    }))
 }
-pub async fn export_data(State(s): State<AppState>) -> ApiResult<Value> {
+pub async fn export_data(s: &AppState) -> ServiceResult<Value> {
     let books = sqlx::query_as::<_, Book>("SELECT * FROM books ORDER BY id")
         .fetch_all(&s.db)
         .await?;
@@ -561,11 +553,11 @@ pub async fn export_data(State(s): State<AppState>) -> ApiResult<Value> {
         sqlx::query_as::<_, Progress>("SELECT * FROM progress_entries ORDER BY id")
             .fetch_all(&s.db)
             .await?;
-    Ok(Json(
+    Ok(
         json!({"version": 2, "books": books, "readings": readings, "progress_entries": progress_entries}),
-    ))
+    )
 }
-pub async fn import_data(State(s): State<AppState>, Json(data): Json<Backup>) -> ApiResult<Value> {
+pub async fn import_data(s: &AppState, data: Backup) -> ServiceResult<Value> {
     if data.version != 1 && data.version != 2 {
         return Err(bad("Versão de ficheiro não suportada"));
     }
@@ -588,7 +580,13 @@ pub async fn import_data(State(s): State<AppState>, Json(data): Json<Backup>) ->
             published: b.published.clone(),
             description: Some(b.description.clone()),
             source: Some(b.source.clone()),
-            rating: b.rating.map(|rating| if data.version == 1 { rating * 2 } else { rating }),
+            rating: b.rating.map(|rating| {
+                if data.version == 1 {
+                    rating * 2
+                } else {
+                    rating
+                }
+            }),
             review: Some(b.review.clone()),
             notes: Some(b.notes.clone()),
             tags: Some(b.tags.clone()),
@@ -651,7 +649,7 @@ pub async fn import_data(State(s): State<AppState>, Json(data): Json<Backup>) ->
             .bind(p.id).bind(p.reading_id).bind(p.value).bind(&p.note).bind(&p.recorded_at).execute(&mut *tx).await?;
     }
     tx.commit().await?;
-    Ok(Json(json!({"ok": true, "books": data.books.len()})))
+    Ok(json!({"ok": true, "books": data.books.len()}))
 }
 
 #[cfg(test)]
@@ -677,52 +675,104 @@ mod tests {
     fn book_input(page_count: Option<i64>) -> BookInput {
         serde_json::from_value(json!({
             "title": "Test book", "authors": "", "page_count": page_count
-        })).unwrap()
+        }))
+        .unwrap()
     }
 
     #[tokio::test]
     async fn page_count_edits_preserve_reading_history() {
         let s = test_state().await;
-        let Json(b) = create_book(State(s.clone()), Json(book_input(Some(300)))).await.unwrap();
-        let Json(r) = start_reading(State(s.clone()), Path(b.id), Json(StartReading { unit: "pages".into() })).await.unwrap();
+        let b = create_book(&s, book_input(Some(300))).await.unwrap();
+        let r = start_reading(
+            &s,
+            b.id,
+            StartReading {
+                unit: "pages".into(),
+            },
+        )
+        .await
+        .unwrap();
         for value in [150, 100] {
-            let _ = add_progress(State(s.clone()), Path(r.id), Json(ProgressInput {
-                value, note: None, recorded_at: Some("2026-10-01".into())
-            })).await.unwrap();
+            let _ = add_progress(
+                &s,
+                r.id,
+                ProgressInput {
+                    value,
+                    note: None,
+                    recorded_at: Some("2026-10-01".into()),
+                },
+            )
+            .await
+            .unwrap();
         }
-        let _ = change_reading(State(s.clone()), Path(r.id), Json(ReadingStatus { status: "completed".into() })).await.unwrap();
+        let _ = change_reading(
+            &s,
+            r.id,
+            ReadingStatus {
+                status: "completed".into(),
+            },
+        )
+        .await
+        .unwrap();
         for count in [None, Some(120)] {
-            let error = update_book(State(s.clone()), Path(b.id), Json(book_input(count))).await.err().unwrap();
-            assert_eq!(error.0, axum::http::StatusCode::BAD_REQUEST);
+            let error = update_book(&s, b.id, book_input(count))
+                .await
+                .err()
+                .unwrap();
+            assert_eq!(error.0, reqwest::StatusCode::BAD_REQUEST);
             assert_eq!(book(&s.db, b.id).await.unwrap().page_count, Some(300));
         }
-        let _ = update_book(State(s.clone()), Path(b.id), Json(book_input(Some(150)))).await.unwrap();
+        let _ = update_book(&s, b.id, book_input(Some(150))).await.unwrap();
         assert_eq!(book(&s.db, b.id).await.unwrap().page_count, Some(150));
-        let Json(other) = create_book(State(s.clone()), Json(book_input(Some(200)))).await.unwrap();
-        let _ = update_book(State(s.clone()), Path(other.id), Json(book_input(None))).await.unwrap();
+        let other = create_book(&s, book_input(Some(200))).await.unwrap();
+        let _ = update_book(&s, other.id, book_input(None)).await.unwrap();
     }
 
     #[tokio::test]
     async fn mixed_date_formats_use_last_entry_of_each_day() {
         let s = test_state().await;
-        let Json(b) = create_book(State(s.clone()), Json(book_input(Some(300)))).await.unwrap();
-        let Json(r) = start_reading(State(s.clone()), Path(b.id), Json(StartReading { unit: "pages".into() })).await.unwrap();
+        let b = create_book(&s, book_input(Some(300))).await.unwrap();
+        let r = start_reading(
+            &s,
+            b.id,
+            StartReading {
+                unit: "pages".into(),
+            },
+        )
+        .await
+        .unwrap();
         // Timestamped entries from the API or old backups coexist with UI dates.
         sqlx::query("INSERT INTO progress_entries (reading_id,value,recorded_at) VALUES (?,20,'2026-10-01 12:00:00')")
             .bind(r.id).execute(&s.db).await.unwrap();
-        let Json(last) = add_progress(State(s.clone()), Path(r.id), Json(ProgressInput {
-            value: 30, note: None, recorded_at: Some("2026-10-01".into())
-        })).await.unwrap();
-        let _ = add_progress(State(s.clone()), Path(r.id), Json(ProgressInput {
-            value: 10, note: None, recorded_at: Some("2026-09-30".into())
-        })).await.unwrap();
+        let last = add_progress(
+            &s,
+            r.id,
+            ProgressInput {
+                value: 30,
+                note: None,
+                recorded_at: Some("2026-10-01".into()),
+            },
+        )
+        .await
+        .unwrap();
+        let _ = add_progress(
+            &s,
+            r.id,
+            ProgressInput {
+                value: 10,
+                note: None,
+                recorded_at: Some("2026-09-30".into()),
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 30);
-        let Json(detail) = get_book(State(s.clone()), Path(b.id)).await.unwrap();
+        let detail = get_book(&s, b.id).await.unwrap();
         assert_eq!(detail["readings"][0]["progress"][0]["id"], last.id);
-        let Json(summary) = stats(State(s.clone())).await.unwrap();
+        let summary = stats(&s).await.unwrap();
         assert_eq!(summary["pages_read"], 30);
         assert_eq!(summary["daily_pages"][1]["pages"], 20);
-        let _ = delete_progress(State(s.clone()), Path(last.id)).await.unwrap();
+        let _ = delete_progress(&s, last.id).await.unwrap();
         assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 20);
     }
 
@@ -735,5 +785,56 @@ mod tests {
         assert!(is_timestamp("2026-09-29 23:59:59"));
         assert!(!is_timestamp("2026-09-29 24:00:00"));
         assert!(!is_timestamp("<script>bad</script>"));
+    }
+
+    #[tokio::test]
+    async fn native_database_survives_restart_and_backup_roundtrip() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("booklib.sqlite");
+        let s = AppState::open(&path).await.unwrap();
+        let b = create_book(&s, book_input(Some(300))).await.unwrap();
+        let r = start_reading(
+            &s,
+            b.id,
+            StartReading {
+                unit: "pages".into(),
+            },
+        )
+        .await
+        .unwrap();
+        add_progress(
+            &s,
+            r.id,
+            ProgressInput {
+                value: 42,
+                note: Some("Local note".into()),
+                recorded_at: Some("2026-10-01".into()),
+            },
+        )
+        .await
+        .unwrap();
+        let backup = export_data(&s).await.unwrap();
+        s.db.close().await;
+
+        let reopened = AppState::open(&path).await.unwrap();
+        assert_eq!(export_data(&reopened).await.unwrap(), backup);
+        delete_book(&reopened, b.id).await.unwrap();
+        assert!(list_books(&reopened).await.unwrap().is_empty());
+        import_data(&reopened, serde_json::from_value(backup.clone()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(export_data(&reopened).await.unwrap(), backup);
+
+        // Invalid imports must roll back deletion of the current library.
+        let mut invalid = backup.clone();
+        let duplicate = invalid["books"][0].clone();
+        invalid["books"].as_array_mut().unwrap().push(duplicate);
+        assert!(
+            import_data(&reopened, serde_json::from_value(invalid).unwrap())
+                .await
+                .is_err()
+        );
+        assert_eq!(export_data(&reopened).await.unwrap(), backup);
+        reopened.db.close().await;
     }
 }

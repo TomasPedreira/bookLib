@@ -1,0 +1,18 @@
+{
+  "identifier": "main",
+  "description": "Local library, user-selected backups and external book links",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:app:allow-exit",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-message",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    { "identifier": "opener:allow-open-url", "allow": [
+      { "url": "https://www.amazon.es/*" },
+      { "url": "https://openlibrary.org/*" }
+    ] }
+  ]
+}

@@ -1,63 +1,18 @@
+import { library, catalog } from './services.js';
+import { state } from './state.js';
+import { topicGroups, popularTopics, topicSearchAliases, languages, topicLabel } from './topics.js';
+import { confirmAction, saveBackup, loadBackup, installExternalLinks, installBackButton } from './platform.js';
+import { validateBackup } from './backup.js';
+
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const state = { books: [], stats: {}, filter: 'all', view: 'inicio', selected: null, work: null, editionOffset: 0, editionTotal: 0, bookEdit: null, progressEdit: null, pendingEdition: null, importing: false, pendingProgress: new Set(), recommendationGenres: [], recommendationLanguages: [], recommendations: [], homeRecommendations: [], viewedWorks: [], booksReady: false, homeStale: true, browseLoaded: false };
+
 const labels = { want: 'Want to read', reading: 'Reading', paused: 'Paused', completed: 'Finished', abandoned: 'Abandoned' };
-const topicGroups = [
-  {label:'Lives & society', topics:{biography:'Biography',memoir:'Memoir',autobiography:'Autobiography',history:'History',politics:'Politics',philosophy:'Philosophy',psychology:'Psychology',religion:'Religion'}},
-  {label:'Fiction & stories', topics:{fiction:'Fiction',classics:'Classics',fantasy:'Fantasy',science_fiction:'Sci-fi',romance:'Romance',mystery:'Mystery',thriller:'Thriller',crime:'Crime',horror:'Horror',historical_fiction:'Historical fiction',dystopian:'Dystopian',adventure:'Adventure',short_stories:'Short stories',literary_fiction:'Literary fiction',humor:'Humor'}},
-  {label:'Knowledge & interests', topics:{nonfiction:'Nonfiction',science:'Science',technology:'Technology',business:'Business',finance:'Finance',self_help:'Self-help',health:'Health',cooking:'Cooking',art:'Art',travel:'Travel',sports:'Sports',education:'Education',music:'Music'}},
-  {label:'Readers & formats', topics:{young_adult:'Young adult',children:'Children’s',comics:'Comics',graphic_novels:'Graphic novels',manga:'Manga',poetry:'Poetry'}}
-];
-const popularTopics = Object.assign({}, ...topicGroups.map(group => group.topics));
-const topicSearchAliases = {biography:'biografia',memoir:'memorias memórias',autobiography:'autobiografia',nonfiction:'nao ficcao não ficção',science_fiction:'ficcao cientifica ficção científica',graphic_novels:'novelas graficas novelas gráficas'};
-const languages = {eng:'English',por:'Portuguese',spa:'Spanish',fre:'French',ger:'German',ita:'Italian'};
 let toastTimer, browseSearchTimer, isbnSerial = 0, recommendationSerial = 0, homeRecommendationSerial = 0, browseDialogSerial = 0, browseDialogEditionSerial = 0;
 let backgroundScrollY = null;
 
-const topicLabel = key => popularTopics[key] || key.replaceAll('_', ' ');
 
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-const apiErrorTranslations = {
-  'Não podes remover o número de páginas de um livro com leituras em páginas': 'Keep the page count for a book with reading sessions tracked in pages',
-  'O número de páginas não pode ser inferior ao progresso registado': 'Page count cannot be lower than recorded progress',
-  'Erro na base de dados': 'Database error',
-  'Registo não encontrado': 'Entry not found',
-  'Catálogo temporariamente indisponível': 'Catalog temporarily unavailable',
-  'O catálogo não respondeu à pesquisa': 'The catalog did not respond to the search',
-  'Resposta inválida do catálogo': 'Invalid catalog response',
-  'Pesquisa entre 2 e 120 caracteres': 'Search must contain 2 to 120 characters',
-  'Identificador de obra inválido': 'Invalid work ID',
-  'Indica o título': 'Enter a title',
-  'Título ou autor demasiado longo': 'Title or author is too long',
-  'Número de páginas inválido': 'Invalid page count',
-  'Classificação inválida': 'Invalid rating',
-  'Identificador de edição inválido': 'Invalid edition ID',
-  'ISBN inválido': 'Enter a valid ISBN-10 or ISBN-13',
-  'Edição inválida no catálogo': 'Invalid edition data from the catalog',
-  'Edição não encontrada no catálogo': 'No edition found for this ISBN',
-  'Campo do livro demasiado longo': 'Book field is too long',
-  'URL da capa inválido': 'Invalid cover URL',
-  'Texto demasiado longo': 'Text is too long',
-  'Esta edição já está na biblioteca': 'This edition is already in your library',
-  'Unidade inválida': 'Invalid progress unit',
-  'Indica o número de páginas ou usa percentagem': 'Enter a page count or use percentage progress',
-  'Já existe uma leitura em curso': 'A reading session is already in progress',
-  'Estado inválido': 'Invalid status',
-  'Esta leitura já terminou; inicia uma releitura': 'This reading session has ended; start a new one',
-  'Só podes alterar a leitura mais recente': 'You can only change the latest reading session',
-  'Data inválida': 'Invalid date',
-  'Esta leitura já terminou': 'This reading session has ended',
-  'Versão de ficheiro não suportada': 'Unsupported backup version',
-  'Ficheiro demasiado grande': 'Backup file is too large',
-  'Ficheiro contém um livro sem título': 'Backup contains a book without a title',
-  'Dados inválidos no ficheiro': 'Backup contains invalid data',
-  'Escolhe pelo menos um género': 'Choose at least one genre'
-};
-function apiErrorMessage(message, status) {
-  if (!message) return `Error ${status}`;
-  const range = /^Indica um valor entre 0 e (\d+)$/.exec(message);
-  return range ? `Enter a value between 0 and ${range[1]}` : apiErrorTranslations[message] || message;
-}
 function safeImage(value) { try { const u = new URL(value); return ['http:', 'https:'].includes(u.protocol) ? escapeHtml(u.href) : ''; } catch { return ''; } }
 function languageLabel(value) {
   if (!value) return '';
@@ -67,20 +22,13 @@ function languageLabel(value) {
 function dateLabel(value) { if (!value) return ''; const d = new Date(String(value).replace(' ', 'T')); return Number.isNaN(d.getTime()) ? value : new Intl.DateTimeFormat('en-GB', {day:'numeric',month:'short',year:'numeric'}).format(d); }
 function today() { return new Date().toLocaleDateString('sv-SE'); }
 function notify(message, error = false) { const el = $('#toast'); el.textContent = message; el.className = `toast show${error ? ' error' : ''}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.className = 'toast', 3500); }
-async function api(path, options = {}) {
-  const res = await fetch(path, {headers: {'Content-Type':'application/json'}, ...options});
-  let data; try { data = await res.json(); } catch { data = null; }
-  if (!res.ok) throw new Error(apiErrorMessage(data?.error, res.status));
-  return data;
-}
-function jsonRequest(method, body) { return {method, body: JSON.stringify(body)}; }
-function coverHtml(book, cls = '') { const src = safeImage(book.cover_url); return `<div class="${cls || 'cover-wrap'}">${src ? `<img src="${src}" alt="Cover of ${escapeHtml(book.title)}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.hidden=false"><span class="cover-fallback" hidden>${escapeHtml(book.title)}</span>` : `<span class="cover-fallback">${escapeHtml(book.title)}</span>`}</div>`; }
+function coverHtml(book, cls = '') { const src = safeImage(book.cover_url); return `<div class="${cls || 'cover-wrap'}">${src ? `<img src="${src}" alt="Cover of ${escapeHtml(book.title)}" loading="lazy"><span class="cover-fallback" hidden>${escapeHtml(book.title)}</span>` : `<span class="cover-fallback">${escapeHtml(book.title)}</span>`}</div>`; }
 function progressPct(book, reading) { if (!reading) return 0; const max = reading.unit === 'percent' ? 100 : book.page_count; return max ? Math.min(100, Math.round(100 * reading.current_value / max)) : 0; }
 function readingText(book, reading) { return reading.unit === 'percent' ? `${reading.current_value}%` : `${reading.current_value} / ${book.page_count || '?'} pages`; }
 function empty(title, text, action = '') { return `<div class="empty-state"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p>${action}</div>`; }
 
 async function refresh() {
-  const [books, stats] = await Promise.all([api('/api/books'), api('/api/stats')]);
+  const [books, stats] = await Promise.all([library.list(), library.stats()]);
   const profile = items => items.map(({book}) => [book.id, book.work_id, book.rating, book.topics, book.status]);
   const oldProfile = JSON.stringify(profile(state.books));
   state.books = books; state.stats = stats;
@@ -109,7 +57,7 @@ function recordViewedWork(id, knownGenre = '') {
   state.homeStale = true;
   try { localStorage.setItem('booklib-viewed-works', JSON.stringify(state.viewedWorks)); } catch { /* History still works in this session. */ }
   if (entry.genres.length) return;
-  api(`/api/catalog/works/${id}/genres`).then(data => {
+  catalog.genres(id).then(data => {
     const current = state.viewedWorks.find(item => item.id === id);
     if (!current) return;
     current.genres = [...new Set([...current.genres, ...(data.genres || []).filter(value => popularTopics[value])])];
@@ -165,7 +113,7 @@ async function loadRecommendations() {
   $('#recommend-books').innerHTML = '';
   try {
     const params = new URLSearchParams({genres:state.recommendationGenres.join(','),languages:state.recommendationLanguages.join(',')});
-    const data = await api(term ? `/api/catalog?q=${encodeURIComponent(term)}` : `/api/recommendations?${params}`);
+    const data = await (term ? catalog.search(term) : catalog.recommendations(Object.fromEntries(params)));
     if (serial !== recommendationSerial) return;
     state.recommendations = data.items;
     renderRecommendations();
@@ -194,7 +142,7 @@ async function loadHomeRecommendations() {
   }
   const params = new URLSearchParams({mode:'home',seen:workIds.join(','),interests:Object.entries(interests).filter(([,count]) => count > 0).map(([genre,count]) => `${genre}:${count}`).join(','),avoid:Object.entries(interests).filter(([,count]) => count < 0).map(([genre]) => genre).join(','),genres:state.recommendationGenres.join(','),languages:state.recommendationLanguages.join(',')});
   try {
-    const data = await api(`/api/recommendations?${params}`);
+    const data = await catalog.recommendations(Object.fromEntries(params));
     if (serial !== homeRecommendationSerial) return;
     state.homeRecommendations = data.items;
     renderHomeRecommendations();
@@ -265,7 +213,7 @@ async function saveInlineProgress(bookId, value) {
   state.pendingProgress.add(bookId);
   $$('[data-book], [data-page-input]').filter(el => Number(el.dataset.book || el.dataset.pageInput) === bookId).forEach(el => el.disabled = true);
   try {
-    await api(`/api/readings/${item.reading.id}/progress`, jsonRequest('POST', {value, recorded_at: today()}));
+    await library.addProgress(item.reading.id, {value, recorded_at: today()});
     await refresh();
   } catch (error) { notify(error.message, true); renderDashboard(); }
   finally { state.pendingProgress.delete(bookId); }
@@ -358,7 +306,7 @@ function openBookForm(book = null) {
   openDialog($('#book-dialog'));
 }
 async function openDetail(id) {
-  state.selected = await api(`/api/books/${id}`); recordViewedWork(state.selected.book.work_id); renderDetail(); openDialog($('#detail-dialog'));
+  state.selected = await library.get(id); recordViewedWork(state.selected.book.work_id); renderDetail(); openDialog($('#detail-dialog'));
 }
 function renderDetail() {
   const {book, readings} = state.selected;
@@ -421,7 +369,7 @@ async function openBrowseWork(item) {
   recordViewedWork(item.work_id, item.genre);
   openDialog($('#browse-dialog'));
   try {
-    const details = await api(`/api/catalog/works/${encodeURIComponent(item.work_id)}`);
+    const details = await catalog.details(item.work_id);
     if (serial === browseDialogSerial && $('#browse-dialog').open) $('#browse-dialog-synopsis').textContent = details.description || 'No synopsis available for this book.';
   } catch {
     if (serial === browseDialogSerial && $('#browse-dialog').open) $('#browse-dialog-synopsis').textContent = 'Synopsis unavailable right now.';
@@ -436,7 +384,7 @@ async function loadBrowseDialogEditions(append = false) {
   if (!append) { state.editionOffset = 0; $('#browse-dialog-edition-results').innerHTML = '<p class="muted">Loading editions…</p>'; }
   $('#browse-dialog-more-editions').hidden = true;
   try {
-    const data = await api(`/api/catalog/works/${encodeURIComponent(work.work_id)}/editions?offset=${state.editionOffset}`);
+    const data = await catalog.editions(work.work_id, state.editionOffset);
     if (serial !== browseDialogEditionSerial || !$('#browse-dialog').open) return;
     const sorted = [...data.items].sort((a, b) => {
       const score = ed => (state.recommendationLanguages.length
@@ -471,7 +419,7 @@ async function lookupIsbn(raw) {
   $('#edition-results').innerHTML = '';
   $('#more-editions').hidden = true;
   try {
-    const ed = await api(`/api/catalog/isbn/${encodeURIComponent(isbn)}`);
+    const ed = await catalog.isbn(isbn);
     if (serial !== isbnSerial) return;
     state.work = {title:ed.title, authors:ed.authors || [], cover_url:ed.cover_url, work_id:ed.work_id};
     state.editionItems = [ed]; state.editionOffset = 0; state.editionTotal = 1;
@@ -496,7 +444,7 @@ async function showEditions(index, append = false) {
   $('#edition-heading').textContent = state.work.title;
   $('#edition-results').insertAdjacentHTML('beforeend', append ? '' : '<p class="muted">Loading editions…</p>');
   try {
-    const data = await api(`/api/catalog/works/${encodeURIComponent(state.work.work_id)}/editions?offset=${state.editionOffset}`);
+    const data = await catalog.editions(state.work.work_id, state.editionOffset);
     if (!append) $('#edition-results').innerHTML = '';
     const sorted = [...data.items].sort((a,b) => {
       const score = ed => (state.recommendationLanguages.length
@@ -529,7 +477,7 @@ async function createImportedBook(payload) {
   state.importing = true;
   $$('#page-count-form button').forEach(button => button.disabled = true);
   try {
-    const book = await api('/api/books', jsonRequest('POST', payload));
+    const book = await library.create(payload);
     if ($('#page-count-dialog').open) $('#page-count-dialog').close();
     if ($('#browse-dialog').open) $('#browse-dialog').close();
     state.pendingEdition = null;
@@ -563,7 +511,7 @@ document.addEventListener('click', async event => {
   const homeRecommendation = event.target.closest('[data-home-recommend]');
   if (homeRecommendation) { openBrowseWork(state.visibleHomeRecommendations[Number(homeRecommendation.dataset.homeRecommend)]); return; }
   const step = event.target.closest('[data-step]'); if (step) { const id = Number(step.dataset.book); const item = state.books.find(({book}) => book.id === id); if (item?.reading) await saveInlineProgress(id, item.reading.current_value + Number(step.dataset.step)); return; }
-  const progress = event.target.closest('[data-progress]'); if (progress) { try { state.selected = await api(`/api/books/${progress.dataset.progress}`); openProgress(); } catch(e) { notify(e.message,true); } return; }
+  const progress = event.target.closest('[data-progress]'); if (progress) { try { state.selected = await library.get(Number(progress.dataset.progress)); openProgress(); } catch(e) { notify(e.message,true); } return; }
   const open = event.target.closest('[data-open]'); if (open && !event.target.closest('.planned-buy')) { try { await openDetail(Number(open.dataset.open)); } catch(e) { notify(e.message,true); } return; }
   const edition = event.target.closest('[data-edition]'); if (edition) { importEdition(Number(edition.dataset.edition)); return; }
   const action = event.target.closest('[data-action]');
@@ -571,11 +519,11 @@ document.addEventListener('click', async event => {
     const name = action.dataset.action;
     if (name === 'manual') { openBookForm(); return; }
     if (name === 'edit-book') { const b = state.selected.book; $('#detail-dialog').close(); openBookForm(b); return; }
-    if (name === 'delete-book') { const b = state.selected.book; if (!confirm(`Remove “${b.title}” and all its reading history?`)) return; try { await api(`/api/books/${b.id}`, {method:'DELETE'}); $('#detail-dialog').close(); await refresh(); notify('Book removed'); } catch(e) { notify(e.message,true); } return; }
-    if (name === 'start') { try { await api(`/api/books/${state.selected.book.id}/readings`, jsonRequest('POST',{unit:$('#unit-select').value})); state.selected = await api(`/api/books/${state.selected.book.id}`); renderDetail(); await refresh(); notify('Reading started'); } catch(e) { notify(e.message,true); } return; }
+    if (name === 'delete-book') { const b = state.selected.book; if (!await confirmAction(`Remove “${b.title}” and all its reading history?`)) return; try { await library.remove(b.id); $('#detail-dialog').close(); await refresh(); notify('Book removed'); } catch(e) { notify(e.message,true); } return; }
+    if (name === 'start') { try { await library.start(state.selected.book.id, $('#unit-select').value); state.selected = await library.get(state.selected.book.id); renderDetail(); await refresh(); notify('Reading started'); } catch(e) { notify(e.message,true); } return; }
     if (name === 'progress') { openProgress(); return; }
   }
-  const status = event.target.closest('[data-status]'); if (status) { try { await api(`/api/readings/${state.selected.readings[0].reading.id}`,jsonRequest('PATCH',{status:status.dataset.status})); state.selected = await api(`/api/books/${state.selected.book.id}`); renderDetail(); await refresh(); notify('Status updated'); } catch(e) { notify(e.message,true); } return; }
+  const status = event.target.closest('[data-status]'); if (status) { try { await library.status(state.selected.readings[0].reading.id, status.dataset.status); state.selected = await library.get(state.selected.book.id); renderDetail(); await refresh(); notify('Status updated'); } catch(e) { notify(e.message,true); } return; }
 });
 document.addEventListener('change', async event => {
   if (event.target.id === 'detail-rating') {
@@ -584,7 +532,7 @@ document.addEventListener('change', async event => {
     input.disabled = true;
     try {
       const rating = input.value ? Number(input.value) : null;
-      state.selected.book = await api(`/api/books/${state.selected.book.id}/rating`, jsonRequest('PATCH', {rating}));
+      state.selected.book = await library.rate(state.selected.book.id, rating);
       await refresh();
       renderDetail();
       notify('Rating saved');
@@ -601,10 +549,10 @@ document.addEventListener('change', async event => {
   saveInlineProgress(Number(input.dataset.pageInput), Number(input.value));
 });
 document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.book-row')) { e.preventDefault(); e.target.click(); } });
-$('#book-form').addEventListener('submit', async e => { e.preventDefault(); const payload = bookPayload(e.currentTarget); try { const b = await api(state.bookEdit ? `/api/books/${state.bookEdit.id}` : '/api/books',jsonRequest(state.bookEdit ? 'PUT':'POST',payload)); $('#book-dialog').close(); await refresh(); notify('Book saved'); openDetail(b.id); } catch(err) { notify(err.message,true); } });
+$('#book-form').addEventListener('submit', async e => { e.preventDefault(); const payload = bookPayload(e.currentTarget); try { const b = await (state.bookEdit ? library.update(state.bookEdit.id, payload) : library.create(payload)); $('#book-dialog').close(); await refresh(); notify('Book saved'); openDetail(b.id); } catch(err) { notify(err.message,true); } });
 $('#page-count-form').addEventListener('submit', e => { e.preventDefault(); if (!state.pendingEdition) return; const count = Number(e.currentTarget.elements.page_count.value); if (!Number.isInteger(count) || count < 1) return; createImportedBook({...state.pendingEdition, page_count: count}); });
 $('#skip-pages').addEventListener('click', () => { if (state.pendingEdition) createImportedBook({...state.pendingEdition, page_count: null}); });
-$('#progress-form').addEventListener('submit', async e => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); const payload = {value:Number(data.value),note:data.note,recorded_at:data.recorded_at}; const rid = state.selected.readings[0].reading.id; try { await api(state.progressEdit ? `/api/progress/${state.progressEdit.id}` : `/api/readings/${rid}/progress`,jsonRequest(state.progressEdit?'PUT':'POST',payload)); $('#progress-dialog').close(); state.selected = await api(`/api/books/${state.selected.book.id}`); await refresh(); renderDetail(); openDialog($('#detail-dialog')); notify('Progress saved'); } catch(err) { notify(err.message,true); } });
+$('#progress-form').addEventListener('submit', async e => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); const payload = {value:Number(data.value),note:data.note,recorded_at:data.recorded_at}; const rid = state.selected.readings[0].reading.id; try { await (state.progressEdit ? library.editProgress(state.progressEdit.id, payload) : library.addProgress(rid, payload)); $('#progress-dialog').close(); state.selected = await library.get(state.selected.book.id); await refresh(); renderDetail(); openDialog($('#detail-dialog')); notify('Progress saved'); } catch(err) { notify(err.message,true); } });
 $('#library-search').addEventListener('input',renderLibrary); $('#library-sort').addEventListener('change',renderLibrary);
 $('#library-filters').addEventListener('click',e => { const b=e.target.closest('[data-filter]'); if(!b)return; state.filter=b.dataset.filter; $$('[data-filter]').forEach(x=>x.classList.toggle('active',x===b)); renderLibrary(); });
 $('#filter-toggle').addEventListener('click', () => {
@@ -645,6 +593,29 @@ $('#more-editions').addEventListener('click',()=>showEditions(0,true));
 $('#manual-add').addEventListener('click',()=>openBookForm());
 $('[data-nav="browse"]').addEventListener('click',()=>{ if (state.view === 'browse') showBrowseResults(); });
 $('#backup-open').addEventListener('click',()=>openDialog($('#data-dialog')));
-$('#export-button').addEventListener('click',async()=>{try{const data=await api('/api/export');const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`booklib-${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);notify('Backup downloaded');}catch(e){notify(e.message,true);}});
-$('#import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{const data=JSON.parse(await file.text());if(![1,2].includes(data.version)||!Array.isArray(data.books)||!Array.isArray(data.readings)||!Array.isArray(data.progress_entries))throw new Error('Invalid backup file');if(!confirm(`Restore ${data.books.length} books? Your current data will be replaced.`))return;await api('/api/import',jsonRequest('POST',data));$('#data-dialog').close();await refresh();notify('Library restored');}catch(err){notify(err.message,true);}finally{e.target.value='';}});
+$('#export-button').addEventListener('click', async () => {
+  try {
+    if (await saveBackup(await library.export(), `booklib-${today()}.json`)) notify('Backup saved');
+  } catch (error) { notify(error.message, true); }
+});
+$('#import-button').addEventListener('click', async () => {
+  try {
+    const data = await loadBackup();
+    if (!data) return;
+    validateBackup(data);
+    if (!await confirmAction(`Restore ${data.books.length} books? Your current data will be replaced.`)) return;
+    await library.import(data);
+    $('#data-dialog').close();
+    await refresh();
+    notify('Library restored');
+  } catch (error) { notify(error.message, true); }
+});
+installExternalLinks(error => notify(error.message, true));
+installBackButton(error => notify(error.message, true)).catch(error => notify(error.message, true));
+document.addEventListener('error', event => {
+  if (event.target.matches?.('img')) {
+    event.target.hidden = true;
+    if (event.target.nextElementSibling) event.target.nextElementSibling.hidden = false;
+  }
+}, true);
 window.addEventListener('hashchange',navigate); initRecommendations(); navigate(); refresh().catch(e=>notify(e.message,true));

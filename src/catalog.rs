@@ -1,9 +1,5 @@
-use crate::{bad, ApiResult, AppError, AppState};
-use axum::{
-    extract::{Path, Query, State},
-    http::StatusCode,
-    Json,
-};
+use crate::{bad, AppError, AppState, ServiceResult};
+use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
@@ -185,30 +181,34 @@ pub(crate) async fn default_book_topics(s: &AppState, work_id: &str) -> Result<S
     }
     let url = format!("https://openlibrary.org/works/{work_id}.json");
     let work = fetch(s, &url, &[]).await?;
-    Ok(work_genre_names(&work).into_iter().take(4).collect::<Vec<_>>().join(","))
+    Ok(work_genre_names(&work)
+        .into_iter()
+        .take(4)
+        .collect::<Vec<_>>()
+        .join(","))
 }
 
-pub async fn work_genres(State(s): State<AppState>, Path(id): Path<String>) -> ApiResult<Value> {
+pub async fn work_genres(s: &AppState, id: String) -> ServiceResult<Value> {
     if !valid_olid(&id, 'W') {
         return Err(bad("Identificador de obra inválido"));
     }
     let url = format!("https://openlibrary.org/works/{id}.json");
-    let work = fetch(&s, &url, &[]).await?;
-    Ok(Json(json!({"genres": work_genre_names(&work)})))
+    let work = fetch(s, &url, &[]).await?;
+    Ok(json!({"genres": work_genre_names(&work)}))
 }
 
-pub async fn work_details(State(s): State<AppState>, Path(id): Path<String>) -> ApiResult<Value> {
+pub async fn work_details(s: &AppState, id: String) -> ServiceResult<Value> {
     if !valid_olid(&id, 'W') {
         return Err(bad("Identificador de obra inválido"));
     }
     let url = format!("https://openlibrary.org/works/{id}.json");
-    let work = fetch(&s, &url, &[]).await?;
+    let work = fetch(s, &url, &[]).await?;
     let description = work["description"]
         .as_str()
         .or_else(|| work["description"]["value"].as_str())
         .map(|text| text.trim().chars().take(5_000).collect::<String>())
         .filter(|text| !text.is_empty());
-    Ok(Json(json!({"description": description})))
+    Ok(json!({"description": description}))
 }
 
 async fn fetch(state: &AppState, url: &str, params: &[(&str, &str)]) -> Result<Value, AppError> {
@@ -275,16 +275,13 @@ async fn fetch(state: &AppState, url: &str, params: &[(&str, &str)]) -> Result<V
     Ok(value)
 }
 
-pub async fn search(
-    State(s): State<AppState>,
-    Query(query): Query<SearchQuery>,
-) -> ApiResult<Value> {
+pub async fn search(s: &AppState, query: SearchQuery) -> ServiceResult<Value> {
     let q = query.q.trim();
     if q.len() < 2 || q.len() > 120 {
         return Err(bad("Pesquisa entre 2 e 120 caracteres"));
     }
     let data = fetch(
-        &s,
+        s,
         "https://openlibrary.org/search.json",
         &[
             ("q", q),
@@ -304,15 +301,15 @@ pub async fn search(
         Some(json!({"work_id": work_id, "title": d["title"], "authors": d["author_name"],
             "year": d["first_publish_year"], "cover_url": cover_url, "edition_count": d["edition_count"]}))
     }).collect();
-    Ok(Json(
+    Ok(
         json!({"items": items, "total": data["numFound"].as_i64().or_else(|| data["num_found"].as_i64()).unwrap_or(0)}),
-    ))
+    )
 }
 
-pub async fn lookup_isbn(State(s): State<AppState>, Path(input): Path<String>) -> ApiResult<Value> {
+pub async fn lookup_isbn(s: &AppState, input: String) -> ServiceResult<Value> {
     let isbn = normalize_isbn(&input).ok_or_else(|| bad("ISBN inválido"))?;
     let url = format!("https://openlibrary.org/isbn/{isbn}.json");
-    let edition = fetch(&s, &url, &[]).await?;
+    let edition = fetch(s, &url, &[]).await?;
     let edition_id = edition["key"]
         .as_str()
         .and_then(|key| key.strip_prefix("/books/"))
@@ -326,7 +323,7 @@ pub async fn lookup_isbn(State(s): State<AppState>, Path(input): Path<String>) -
         .find(|id| valid_olid(id, 'W'));
     let search_q = format!("isbn:{isbn}");
     let search = fetch(
-        &s,
+        s,
         "https://openlibrary.org/search.json",
         &[
             ("q", &search_q),
@@ -365,18 +362,15 @@ pub async fn lookup_isbn(State(s): State<AppState>, Path(input): Path<String>) -
         .flatten()
         .filter_map(|item| item["key"].as_str()?.strip_prefix("/languages/"))
         .next();
-    Ok(Json(json!({
+    Ok(json!({
         "edition_id": edition_id, "work_id": work_id, "isbn": isbn,
         "title": edition["title"], "authors": authors, "cover_url": cover_url,
         "page_count": edition["number_of_pages"], "published": edition["publish_date"],
         "language": language,
-    })))
+    }))
 }
 
-pub async fn recommendations(
-    State(s): State<AppState>,
-    Query(query): Query<RecommendationQuery>,
-) -> ApiResult<Value> {
+pub async fn recommendations(s: &AppState, query: RecommendationQuery) -> ServiceResult<Value> {
     let home = query.mode.as_deref() == Some("home");
     let chosen: Vec<&str> = query
         .genres
@@ -410,7 +404,7 @@ pub async fn recommendations(
         if interests.is_empty() {
             for id in seen.iter().take(4) {
                 let url = format!("https://openlibrary.org/works/{id}.json");
-                if let Ok(work) = fetch(&s, &url, &[]).await {
+                if let Ok(work) = fetch(s, &url, &[]).await {
                     for genre in work_genre_names(&work) {
                         *interests.entry(genre).or_default() += 1;
                     }
@@ -439,7 +433,10 @@ pub async fn recommendations(
         }
     }
     if home || genres.is_empty() {
-        for genre in ["fiction", "fantasy", "science_fiction", "mystery"].into_iter().chain(TOPICS.iter().copied()) {
+        for genre in ["fiction", "fantasy", "science_fiction", "mystery"]
+            .into_iter()
+            .chain(TOPICS.iter().copied())
+        {
             if genres.len() >= 4 {
                 break;
             }
@@ -585,20 +582,16 @@ pub async fn recommendations(
         }
     }
     selected.extend(remainder.into_iter().take(limit - selected.len()));
-    Ok(Json(json!({"items": selected})))
+    Ok(json!({"items": selected}))
 }
 
-pub async fn editions(
-    State(s): State<AppState>,
-    Path(id): Path<String>,
-    Query(query): Query<EditionQuery>,
-) -> ApiResult<Value> {
+pub async fn editions(s: &AppState, id: String, query: EditionQuery) -> ServiceResult<Value> {
     if !valid_olid(&id, 'W') {
         return Err(bad("Identificador de obra inválido"));
     }
     let offset = query.offset.unwrap_or(0).min(1000).to_string();
     let url = format!("https://openlibrary.org/works/{id}/editions.json");
-    let data = fetch(&s, &url, &[("limit", "50"), ("offset", &offset)]).await?;
+    let data = fetch(s, &url, &[("limit", "50"), ("offset", &offset)]).await?;
     let items: Vec<Value> = data["entries"]
         .as_array()
         .into_iter()
@@ -629,9 +622,9 @@ pub async fn editions(
             )
         })
         .collect();
-    Ok(Json(
+    Ok(
         json!({"items": items, "total": data["size"].as_i64().unwrap_or(0), "offset": offset.parse::<usize>().unwrap_or(0)}),
-    ))
+    )
 }
 
 #[cfg(test)]
@@ -654,6 +647,9 @@ mod tests {
     #[test]
     fn recognises_life_writing_subjects_for_recommendations() {
         let work = json!({"subjects":["Biography", "Personal memoirs", "Business"]});
-        assert_eq!(work_genre_names(&work), vec!["biography", "memoir", "business"]);
+        assert_eq!(
+            work_genre_names(&work),
+            vec!["biography", "memoir", "business"]
+        );
     }
 }

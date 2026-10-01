@@ -1,7 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
-
 :root {
-  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  font-family: system-ui, 'Segoe UI', sans-serif;
   color: #182c3b;
   background: #f4f5f2;
   font-synthesis: none;
@@ -12,10 +10,11 @@
   --line: #cbd6db;
   --accent: #1e6087;
   --soft: #eaf2f6;
-  --mono: 'IBM Plex Mono', Consolas, monospace;
+  --mono: ui-monospace, Consolas, monospace;
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
+body { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
 body.dialog-open { position: fixed; top: var(--locked-scroll-top); left: 0; width: 100%; overflow: hidden; padding-right: var(--scrollbar-gap); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
@@ -356,4 +355,13 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
   .form-grid { grid-template-columns: 1fr; }
   .form-grid label.wide { grid-column: auto; }
   .dialog { --dialog-pad: 17px; }
+}
+
+@media (pointer: coarse) {
+  button, .secondary-button, .primary-button, .text-link, .icon-button,
+  .detail-icon-button, .step-buttons button, .top-nav a { min-height: 44px; }
+  .detail-icon-button, .icon-button, .step-buttons button { min-width: 44px; }
+  input, select, textarea { font-size: 16px; }
+  .dialog { max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+  .toast { bottom: calc(20px + env(safe-area-inset-bottom)); }
 }

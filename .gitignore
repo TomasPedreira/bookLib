@@ -18,3 +18,15 @@
 /START_REMOTE_BOOKLIB.bat
 /END_REMOTE_BOOKLIB.ps1
 /END_REMOTE_BOOKLIB.bat
+
+/node_modules/
+/dist/
+/.android-sdk/
+/src-tauri/gen/schemas/
+/src-tauri/gen/android/.gradle/
+/src-tauri/gen/android/.idea/
+/src-tauri/gen/android/local.properties
+/src-tauri/gen/android/**/build/
+*.jks
+*.keystore
+/artifacts/

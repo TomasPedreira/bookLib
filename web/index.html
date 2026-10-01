@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f4f5f2">
   <title>BookLib — My library</title>
   <link rel="stylesheet" href="/style.css?v=47">
-  <script src="/app.js?v=63" defer></script>
+  <script type="module" src="/app.js"></script>
 </head>
 <body>
   <div class="app-shell">
@@ -41,7 +41,7 @@
   <dialog id="browse-dialog" class="dialog browse-dialog" aria-label="Book details"><div class="dialog-close-row"><button class="icon-button close-dialog" type="button" aria-label="Close">×</button></div><div class="dialog-scroll"><div id="browse-dialog-content"></div><section id="browse-dialog-editions" hidden><h3>Choose your edition</h3><div id="browse-dialog-edition-results" class="edition-list"></div><button id="browse-dialog-more-editions" class="secondary-button" type="button" hidden>More editions</button></section></div></dialog>
   <dialog id="page-count-dialog" class="dialog small-dialog"><div class="dialog-close-row"><button class="icon-button close-dialog" type="button" aria-label="Close">×</button></div><form id="page-count-form" class="dialog-scroll"><div class="dialog-head"><div><h2>Number of pages</h2></div></div><p id="page-count-book" class="muted"></p><p>The catalog has no page count for this edition. Enter the number from your copy, or save it without a page count.</p><div class="form-grid"><label class="wide">Pages in your copy<input name="page_count" type="number" inputmode="numeric" min="1" step="1" placeholder="e.g. 342" required></label></div><div class="dialog-actions"><button id="skip-pages" class="secondary-button" type="button">Save without pages</button><button class="primary-button" type="submit">Add book</button></div></form></dialog>
   <dialog id="progress-dialog" class="dialog small-dialog"><div class="dialog-close-row"><button class="icon-button close-dialog" type="button" aria-label="Close">×</button></div><form id="progress-form" class="dialog-scroll"><div class="dialog-head"><div><p class="eyebrow">Your reading</p><h2 id="progress-heading">Update progress</h2></div></div><p id="progress-context" class="muted"></p><div class="form-grid"><label>Progress <input name="value" type="number" min="0" required></label><label>Date <input name="recorded_at" type="date" required></label><label class="wide">Note (optional) <textarea name="note" rows="3" placeholder="Any thoughts on this part?"></textarea></label></div><div class="dialog-actions"><button class="secondary-button close-dialog" type="button">Cancel</button><button class="primary-button" type="submit">Save progress</button></div></form></dialog>
-  <dialog id="data-dialog" class="dialog small-dialog"><div class="dialog-close-row"><button class="icon-button close-dialog" type="button" aria-label="Close">×</button></div><div class="dialog-scroll"><div class="dialog-head"><div><p class="eyebrow">Your data</p><h2>Export and restore</h2></div></div><p>Download a complete JSON backup of your books, reading sessions, and progress. You can use it to restore your library.</p><div class="data-actions"><button id="export-button" class="primary-button" type="button">Download backup</button><label class="secondary-button upload-label">Restore from file<input id="import-file" type="file" accept="application/json,.json" hidden></label></div><p class="muted tiny">Restoring replaces your current data. Download a backup first if you want to keep it.</p></div></dialog>
+  <dialog id="data-dialog" class="dialog small-dialog"><div class="dialog-close-row"><button class="icon-button close-dialog" type="button" aria-label="Close">×</button></div><div class="dialog-scroll"><div class="dialog-head"><div><p class="eyebrow">Your data</p><h2>Export and restore</h2></div></div><p>Download a complete JSON backup of your books, reading sessions, and progress. You can use it to restore your library.</p><div class="data-actions"><button id="export-button" class="primary-button" type="button">Download backup</button><button id="import-button" class="secondary-button" type="button">Restore from file</button></div><p class="muted tiny">Restoring replaces your current data. Download a backup first if you want to keep it.</p></div></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
