@@ -78,14 +78,18 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .plan-section, .home-recommend-section, .shelf-section, .summary-section { margin-top: 65px; padding-top: 25px; border-top: 1px solid var(--line); }
 .plan-section .section-head, .home-recommend-section .section-head, .shelf-section .section-head, .summary-section .section-head { margin-bottom: 17px; }
 .planned-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 350px), 1fr)); gap: 10px; }
-.planned-card { box-sizing: border-box; display: flex; align-items: center; width: min(100%, clamp(320px, 58vw, 420px)); min-width: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); cursor: pointer; }
+.planned-card { box-sizing: border-box; display: flex; flex-wrap: wrap; align-items: center; width: min(100%, clamp(320px, 58vw, 420px)); min-width: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); cursor: pointer; }
 .planned-main { display: flex; flex: 1; align-items: center; gap: 12px; min-width: 0; min-height: 126px; padding: 15px; border: 0; background: none; color: inherit; text-align: left; }
 .planned-cover { flex: none; width: 68px; height: 96px; overflow: hidden; background: var(--soft); }
 .planned-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .planned-info { display: grid; flex: 1; gap: 6px; min-width: 0; }
 .planned-info strong { overflow-wrap: anywhere; font-size: 17px; line-height: 1.2; }
 .planned-info span { color: var(--muted); font-size: 12px; }
-.planned-buy-form { flex: none; margin-right: 15px; }
+.planned-actions { display: flex; gap: 10px; width: 100%; margin: 0 15px 15px; }
+.planned-actions button { min-height: 44px; }
+.planned-start { flex: 1; padding: 7px 12px; border: 1px solid var(--accent); border-radius: 3px; background: var(--accent); color: #fff; font: 600 12px var(--mono); }
+.planned-start:hover { background: #164a69; }
+.planned-buy-form { flex: none; margin: 0; }
 .planned-buy { padding: 7px 12px; border: 1px solid var(--accent); border-radius: 3px; background: var(--accent); color: #fff; font: 600 12px var(--mono); }
 .planned-buy:hover { background: #164a69; }
 .home-recommend-grid { display: grid; grid-auto-flow: column; grid-auto-columns: 160px; gap: 9px; overflow-x: auto; padding: 2px 2px 13px; scrollbar-width: thin; }

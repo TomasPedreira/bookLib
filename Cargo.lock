@@ -328,7 +328,7 @@ dependencies = [
 
 [[package]]
 name = "booklib-app"
-version = "0.2.6"
+version = "1.0.0"
 dependencies = [
  "booklib",
  "serde_json",

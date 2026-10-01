@@ -211,7 +211,7 @@ function renderDashboard() {
   $('#home-books').innerHTML = shelf.map(bookRow).join('');
 }
 function plannedCard({book}) {
-  return `<article class="planned-card" data-open="${book.id}"><button class="planned-main" type="button" aria-label="Open details for ${escapeHtml(book.title)}">${coverHtml(book, 'planned-cover')}<span class="planned-info"><strong>${escapeHtml(book.title)}</strong><span>${escapeHtml(book.authors || 'Unknown author')}</span></span></button><form class="planned-buy-form" action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(book.title)}"><input type="hidden" name="i" value="stripbooks"><button class="planned-buy" type="submit" aria-label="Search prices for ${escapeHtml(book.title)} on Amazon">Prices</button></form></article>`;
+  return `<article class="planned-card" data-open="${book.id}"><button class="planned-main" type="button" aria-label="Open details for ${escapeHtml(book.title)}">${coverHtml(book, 'planned-cover')}<span class="planned-info"><strong>${escapeHtml(book.title)}</strong><span>${escapeHtml(book.authors || 'Unknown author')}</span></span></button><div class="planned-actions"><button class="planned-start" type="button" data-start-book="${book.id}">Start reading</button><form class="planned-buy-form" action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(book.title)}"><input type="hidden" name="i" value="stripbooks"><button class="planned-buy" type="submit" aria-label="Search prices for ${escapeHtml(book.title)} on Amazon">Prices</button></form></div></article>`;
 }
 function readingCard({book, reading}) {
   const max = reading.unit === 'percent' ? 100 : book.page_count;
@@ -553,6 +553,18 @@ document.addEventListener('click', async event => {
   if (homeRecommendation) { openBrowseWork(state.visibleHomeRecommendations[Number(homeRecommendation.dataset.homeRecommend)]); return; }
   const step = event.target.closest('[data-step]'); if (step) { const id = Number(step.dataset.book); const item = state.books.find(({book}) => book.id === id); if (item?.reading) await saveInlineProgress(id, item.reading.current_value + Number(step.dataset.step)); return; }
   const progress = event.target.closest('[data-progress]'); if (progress) { try { state.selected = await library.get(Number(progress.dataset.progress)); openProgress(); } catch(e) { notify(e.message,true); } return; }
+  const startBook = event.target.closest('[data-start-book]');
+  if (startBook) {
+    const item = state.books.find(({book}) => book.id === Number(startBook.dataset.startBook));
+    if (!item || item.book.status !== 'want' || startBook.disabled) return;
+    startBook.disabled = true;
+    try {
+      await library.start(item.book.id, item.book.page_count ? 'pages' : 'percent');
+      await refresh();
+      notify('Reading started');
+    } catch (error) { startBook.disabled = false; notify(error.message, true); }
+    return;
+  }
   const open = event.target.closest('[data-open]'); if (open && !event.target.closest('.planned-buy')) { try { await openDetail(Number(open.dataset.open)); } catch(e) { notify(e.message,true); } return; }
   const edition = event.target.closest('[data-edition]'); if (edition) { importEdition(Number(edition.dataset.edition)); return; }
   const action = event.target.closest('[data-action]');
