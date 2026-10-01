@@ -136,6 +136,8 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .recommend-info strong { overflow-wrap: anywhere; font-size: 18px; line-height: 1.25; }
 .recommend-info span, .recommend-info small { color: var(--muted); font-size: 13px; }
 .recommend-info small { line-height: 1.35; }
+.recommend-info .recommend-topics { line-height: 1.5; }
+.recommend-info .recommend-topics strong { font-size: inherit; font-weight: 700; color: var(--ink); }
 .text-link { border: 0; background: none; color: var(--accent); padding: 5px 0; font: 600 12px var(--mono); }
 .text-link:hover { text-decoration: underline; }
 .book-list { display: grid; gap: 8px; }

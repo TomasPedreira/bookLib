@@ -80,11 +80,20 @@ function saveRecommendationChoices() {
   $('#recommend-books').innerHTML = '';
   $('#recommend-message').textContent = 'Filters changed. Update results to refresh the list.';
 }
+function browseTopicMarkup(topics) {
+  const filters = $('#browse-search').value.trim() ? [] : state.recommendationGenres;
+  return [...new Set(topics.filter(topic => popularTopics[topic]))]
+    .sort((a, b) => Number(filters.includes(b)) - Number(filters.includes(a)))
+    .map(topic => filters.includes(topic) ? `<strong>${escapeHtml(topicLabel(topic))}</strong>` : `<span>${escapeHtml(topicLabel(topic))}</span>`);
+}
+function catalogTopics(item) {
+  return [...new Set([...(item.genres || []), item.genre].filter(topic => popularTopics[topic]))];
+}
 function renderRecommendations() {
   const ownedIds = new Set(state.books.map(item => item.book.work_id).filter(Boolean));
   const ownedTitles = new Set(state.books.map(item => item.book.title.trim().toLocaleLowerCase()));
   const items = state.recommendations.filter(item => !ownedIds.has(item.work_id) && !ownedTitles.has(item.title.trim().toLocaleLowerCase()));
-  $('#recommend-books').innerHTML = items.map((item, index) => `<button class="recommend-card" type="button" data-recommend-work="${index}" aria-label="Open ${escapeHtml(item.title)}">${coverHtml(item, 'mini-cover')}<span class="recommend-info"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</span><small>${escapeHtml(item.genre ? topicLabel(item.genre) : item.year || 'Book')}${item.ratings_count >= 5 ? `, ★ ${Number(item.ratings_average).toFixed(1)} (${item.ratings_count})` : ''}</small></span></button>`).join('');
+  $('#recommend-books').innerHTML = items.map((item, index) => `<button class="recommend-card" type="button" data-recommend-work="${index}" aria-label="Open ${escapeHtml(item.title)}">${coverHtml(item, 'mini-cover')}<span class="recommend-info"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</span><small>${escapeHtml(item.year || 'Book')}${item.ratings_count >= 5 ? `, ★ ${Number(item.ratings_average).toFixed(1)} (${item.ratings_count})` : ''}</small><span class="recommend-topics" aria-label="Book topics">${browseTopicMarkup(catalogTopics(item)).join(', ') || 'No topics listed'}</span></span></button>`).join('');
   state.visibleRecommendations = items;
 }
 function syncBrowseFilters() {
@@ -357,7 +366,7 @@ function showBrowseResults() {
 function renderBrowseTopics(topics, emptyMessage = 'No topics listed') {
   const known = [...new Set(topics.filter(topic => popularTopics[topic]))];
   $('#browse-topic-list').innerHTML = known.length
-    ? known.map(topic => `<span class="browse-topic" role="listitem">${escapeHtml(topicLabel(topic))}</span>`).join('')
+    ? browseTopicMarkup(known).map(topic => `<span class="browse-topic" role="listitem">${topic}</span>`).join('')
     : `<span class="muted">${escapeHtml(emptyMessage)}</span>`;
 }
 async function openBrowseWork(item) {
@@ -371,7 +380,7 @@ async function openBrowseWork(item) {
   $('#browse-dialog-edition-results').innerHTML = '';
   const serial = ++browseDialogSerial;
   browseDialogEditionSerial++;
-  const knownTopics = [...new Set([...(state.viewedWorks.find(entry => entry.id === item.work_id)?.genres || []), item.genre].filter(topic => popularTopics[topic]))];
+  const knownTopics = [...new Set([...(state.viewedWorks.find(entry => entry.id === item.work_id)?.genres || []), ...catalogTopics(item)].filter(topic => popularTopics[topic]))];
   const meta = item.year || '';
   $('#browse-dialog-content').innerHTML = `<div class="browse-dialog-top">${coverHtml(item, 'browse-dialog-cover')}<div class="browse-dialog-info"><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</p>${meta ? `<p>${escapeHtml(meta)}</p>` : ''}${item.ratings_count >= 5 ? `<p>★ ${Number(item.ratings_average).toFixed(1)}, ${item.ratings_count} ratings</p>` : ''}</div></div><section class="browse-dialog-topics" aria-label="Book topics"><h3>Topics</h3><div id="browse-topic-list" class="browse-topic-list" role="list"></div></section><section class="browse-dialog-description"><h3>Synopsis</h3><p id="browse-dialog-synopsis" class="browse-synopsis">Loading synopsis…</p></section>`;
   $('#browse-dialog-actions').innerHTML = `<button id="browse-view-editions" class="secondary-button" type="button">View editions</button><form action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(item.title)}"><input type="hidden" name="i" value="stripbooks"><button class="secondary-button" type="submit" aria-label="Search prices for ${escapeHtml(item.title)} on Amazon">Prices</button></form>`;

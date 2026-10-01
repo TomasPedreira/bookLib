@@ -33,7 +33,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
       if (name === 'plugin:opener|open_url') return;
       if (name === 'list_books') return books.map(book => ({ book, reading: sessions.get(book.id)?.reading || null }));
       if (name === 'stats') return { total: books.length, want: books.length, reading: 0, paused: 0, completed: 0, abandoned: 0, reading_sessions: 0, pages_read: 0, daily_pages: [] };
-      if (name === 'recommendations') return { items: [{ work_id: '/works/OL82563W', title: 'Harry Potter and the Philosopher’s Stone', authors: ['J. K. Rowling'], year: 1997 }] };
+      if (name === 'recommendations' || name === 'search') return { items: [{ work_id: '/works/OL82563W', title: 'Harry Potter and the Philosopher’s Stone', authors: ['J. K. Rowling'], year: 1997, genres: ['fantasy', 'science_fiction'] }] };
       if (name === 'work_details') return { description: 'A long Harry Potter synopsis. '.repeat(300), genres: ['fantasy', 'science_fiction', 'fantasy', 'unknown_topic'] };
       if (name === 'editions') return { total: 30, items: Array.from({ length: 30 }, (_, i) => ({ edition_id: `/books/OL${i}M`, title: `Harry Potter edition ${i}`, language: 'eng', page_count: 300 })) };
       if (name === 'create_book') {
@@ -119,6 +119,24 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     assert.equal($('#browse-topic-list').textContent, 'FantasySci-fi');
     submit('#browse-dialog-actions form');
     await waitFor(() => calls.some(c => c.name === 'plugin:opener|open_url' && c.args.url.startsWith('https://www.amazon.es/s?')));
+    $('#browse-dialog').close();
+    $('[data-nav="browse"]').click();
+    await waitFor(() => $('[data-recommend-work]'));
+    assert.equal($('.recommend-topics').textContent, 'Fantasy, Sci-fi');
+    assert.equal($('.recommend-topics strong'), null);
+    $('[data-recommend-genre="fantasy"]').click();
+    $('#recommend-load').click();
+    await waitFor(() => $('.recommend-topics strong'));
+    assert.equal($('.recommend-topics strong').textContent, 'Fantasy');
+    assert.equal($('.recommend-topics').textContent, 'Fantasy, Sci-fi');
+    $('[data-recommend-work]').click();
+    await waitFor(() => $('#browse-topic-list strong'));
+    assert.equal($('#browse-topic-list strong').textContent, 'Fantasy');
+    $('#browse-dialog').close();
+    $('#browse-search').value = 'Harry';
+    $('#browse-search').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitFor(() => calls.some(c => c.name === 'search') && $('.recommend-topics'));
+    assert.equal($('.recommend-topics strong'), null);
     assert.equal(calls.some(c => c.name.includes('/api/')), false);
   } finally { window.close(); }
 });

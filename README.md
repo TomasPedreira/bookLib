@@ -40,6 +40,8 @@ Mantém a mesma chave de assinatura nas atualizações. Para este APK debug, gua
 
 ## Dados e backups
 
+Durante esta fase de testes, correções pequenas atualizam o APK da release existente, mantendo a versão. As notas da release indicam o commit e o checksum do APK mais recente.
+
 Em **My data**, exporta ou restaura um JSON usando o seletor de documentos do Android. Restaurar substitui a biblioteca atual numa transação; uma importação inválida preserva os dados existentes. São aceites as versões 1 e 2 dos backups anteriores.
 
 Se tens a base de dados da antiga versão web, podes criar uma cópia para importar no telemóvel:

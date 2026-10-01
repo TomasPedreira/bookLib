@@ -122,6 +122,7 @@ fn work_genre_names(work: &Value) -> Vec<&'static str> {
     let mut genres = Vec::new();
     for subject in work["subjects"]
         .as_array()
+        .or_else(|| work["subject"].as_array())
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
@@ -289,7 +290,7 @@ pub async fn search(s: &AppState, query: SearchQuery) -> ServiceResult<Value> {
             ("lang", "pt"),
             (
                 "fields",
-                "key,title,author_name,first_publish_year,cover_i,edition_count",
+                "key,title,author_name,first_publish_year,cover_i,edition_count,subject",
             ),
         ],
     )
@@ -299,7 +300,7 @@ pub async fn search(s: &AppState, query: SearchQuery) -> ServiceResult<Value> {
         if !valid_olid(work_id, 'W') { return None; }
         let cover_url = d["cover_i"].as_i64().map(|id| format!("https://covers.openlibrary.org/b/id/{id}-M.jpg"));
         Some(json!({"work_id": work_id, "title": d["title"], "authors": d["author_name"],
-            "year": d["first_publish_year"], "cover_url": cover_url, "edition_count": d["edition_count"]}))
+            "year": d["first_publish_year"], "cover_url": cover_url, "edition_count": d["edition_count"], "genres": work_genre_names(d)}))
     }).collect();
     Ok(
         json!({"items": items, "total": data["numFound"].as_i64().or_else(|| data["num_found"].as_i64()).unwrap_or(0)}),
@@ -465,7 +466,7 @@ pub async fn recommendations(s: &AppState, query: RecommendationQuery) -> Servic
         requests.spawn(async move {
             let data = fetch(&state, "https://openlibrary.org/search.json", &[
                 ("q", q.as_str()), ("sort", "trending"), ("limit", "50"),
-                ("fields", "key,title,author_name,first_publish_year,cover_i,edition_count,language,ratings_average,ratings_count,readinglog_count"),
+                ("fields", "key,title,author_name,first_publish_year,cover_i,edition_count,language,ratings_average,ratings_count,readinglog_count,subject"),
             ]).await;
             (genre_index, data)
         });
@@ -550,10 +551,14 @@ pub async fn recommendations(s: &AppState, query: RecommendationQuery) -> Servic
                 } else {
                     0.0
                 };
+            let mut book_genres = work_genre_names(doc);
+            if !book_genres.contains(&genre) {
+                book_genres.push(genre);
+            }
             let item = json!({
                 "work_id": work_id, "title": title, "authors": authors,
                 "year": doc["first_publish_year"], "cover_url": format!("https://covers.openlibrary.org/b/id/{cover_id}-M.jpg"),
-                "edition_count": doc["edition_count"], "genre": genre,
+                "edition_count": doc["edition_count"], "genre": genre, "genres": book_genres,
                 "ratings_average": if count > 0.0 { Some(average) } else { None }, "ratings_count": count as i64,
             });
             let entry = candidates
@@ -651,5 +656,7 @@ mod tests {
             work_genre_names(&work),
             vec!["biography", "memoir", "business"]
         );
+        let search_doc = json!({"subject":["Science fiction", "Fantasy", "Sci-fi", "Unknown"]});
+        assert_eq!(work_genre_names(&search_doc), vec!["science_fiction", "fantasy"]);
     }
 }
