@@ -313,11 +313,13 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
   .reading-page { padding: 15px; }
   .reading-book strong { font-size: 20px; }
   .reading-page label { font-size: 20px; }
-  .page-controls { gap: 8px; }
+  .page-controls { flex-direction: column; align-items: stretch; justify-content: center; gap: 8px; }
+  .page-number { flex: none; }
+  .step-buttons { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .page-number { padding: 5px; }
   .page-number input { font-size: 23px; }
   .page-number span { font-size: 9px; }
-  .step-buttons button { width: 39px; height: 37px; font-size: 24px; }
+  .step-buttons button { width: 100%; height: 44px; font-size: 24px; }
   .book-row { grid-template-columns: 43px minmax(0, 1fr) 69px; gap: 10px; }
   .browse-toolbar { flex-wrap: wrap; }
   .row-cover { width: 43px; height: 59px; }
@@ -343,7 +345,7 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
   .reading-page label { font-size: 18px; }
   .page-number input { font-size: 20px; }
   .page-number span { font-size: 8px; }
-  .step-buttons button { width: 34px; height: 34px; }
+  .step-buttons button { width: 100%; height: 44px; }
   .plan-section, .home-recommend-section, .shelf-section, .summary-section { margin-top: 46px; }
   .toolbar, .catalog-search { flex-direction: column; }
   .toolbar select { height: 41px; }
