@@ -126,7 +126,7 @@ async function loadRecommendations() {
     state.recommendations = data.items;
     renderRecommendations();
     state.browseLoaded = true;
-    $('#recommend-message').textContent = state.visibleRecommendations.length ? `${state.visibleRecommendations.length} ${term ? 'search results' : 'books'}, Open Library` : term ? 'No books found. Try another title or author.' : 'No books match these filters. Try another genre or fewer languages.';
+    $('#recommend-message').textContent = state.visibleRecommendations.length ? '' : term ? 'No books found. Try another title or author.' : 'No books match these filters. Try another genre or fewer languages.';
   } catch (error) { if (serial === recommendationSerial) { $('#recommend-message').textContent = error.message; notify(error.message, true); } }
   finally { button.disabled = false; }
 }
@@ -154,7 +154,7 @@ async function loadHomeRecommendations() {
     if (serial !== homeRecommendationSerial) return;
     state.homeRecommendations = data.items;
     renderHomeRecommendations();
-    $('#home-recommend-message').textContent = state.visibleHomeRecommendations.length ? 'Top picks based on your browsing and book popularity' : 'No matches yet. Explore more in Browse.';
+    $('#home-recommend-message').textContent = state.visibleHomeRecommendations.length ? '' : 'No matches yet. Explore more in Browse.';
   } catch { if (serial === homeRecommendationSerial) $('#home-recommend-message').textContent = 'Suggestions unavailable right now. Try Browse.'; }
 }
 function renderReadingActivity() {

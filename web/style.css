@@ -46,6 +46,7 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .section-head h2 { font-size: clamp(24px, 3vw, 32px); font-weight: 600; }
 .eyebrow { margin: 0 0 8px; color: var(--accent); font: 700 10px var(--mono); letter-spacing: .1em; }
 .result-count { margin: 0 0 4px; color: var(--muted); font: 11px var(--mono); }
+.result-count:empty { display: none; }
 .reading-section .section-head { margin-bottom: 17px; }
 .reading-stack { display: grid; gap: 14px; }
 .reading-card { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(225px, 1fr); gap: 15px; }
