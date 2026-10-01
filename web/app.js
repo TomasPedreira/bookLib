@@ -80,8 +80,7 @@ function saveRecommendationChoices() {
   $('#recommend-books').innerHTML = '';
   $('#recommend-message').textContent = 'Filters changed. Update results to refresh the list.';
 }
-function browseTopicMarkup(topics) {
-  const filters = $('#browse-search').value.trim() ? [] : state.recommendationGenres;
+function browseTopicMarkup(topics, filters = state.view === 'browse' && $('#browse-search').value.trim() ? [] : state.recommendationGenres) {
   return [...new Set(topics.filter(topic => popularTopics[topic]))]
     .sort((a, b) => Number(filters.includes(b)) - Number(filters.includes(a)))
     .map(topic => filters.includes(topic) ? `<strong>${escapeHtml(topicLabel(topic))}</strong>` : `<span>${escapeHtml(topicLabel(topic))}</span>`);
@@ -135,7 +134,7 @@ function renderHomeRecommendations() {
   const owned = new Set(state.books.map(item => item.book.work_id).filter(Boolean));
   const items = state.homeRecommendations.filter(item => !owned.has(item.work_id)).slice(0, 10);
   state.visibleHomeRecommendations = items;
-  $('#home-recommend-books').innerHTML = items.map((item, index) => `<article class="home-recommend-card"><button class="home-recommend-main" type="button" data-home-recommend="${index}" aria-label="Open details for ${escapeHtml(item.title)}">${coverHtml(item, 'home-cover')}<strong>${escapeHtml(item.title)}</strong><span>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</span><small>${item.ratings_count >= 5 ? `★ ${Number(item.ratings_average).toFixed(1)}` : 'Popular book'}</small></button><form action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(item.title)}"><input type="hidden" name="i" value="stripbooks"><button class="home-recommend-price" type="submit" aria-label="Search prices for ${escapeHtml(item.title)} on Amazon">Prices</button></form></article>`).join('');
+  $('#home-recommend-books').innerHTML = items.map((item, index) => `<article class="home-recommend-card"><button class="home-recommend-main" type="button" data-home-recommend="${index}" aria-label="Open details for ${escapeHtml(item.title)}">${coverHtml(item, 'home-cover')}<strong>${escapeHtml(item.title)}</strong><span>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</span><small>${item.ratings_count >= 5 ? `★ ${Number(item.ratings_average).toFixed(1)}` : 'Popular book'}</small><span class="home-topics" aria-label="Book topics">${browseTopicMarkup(catalogTopics(item), state.recommendationGenres).join(', ') || 'No topics listed'}</span></button><form action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(item.title)}"><input type="hidden" name="i" value="stripbooks"><button class="home-recommend-price" type="submit" aria-label="Search prices for ${escapeHtml(item.title)} on Amazon">Prices</button></form></article>`).join('');
 }
 async function loadHomeRecommendations() {
   if (!state.booksReady) return;

@@ -87,7 +87,7 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .home-recommend-grid { display: grid; grid-auto-flow: column; grid-auto-columns: 160px; gap: 9px; overflow-x: auto; padding: 2px 2px 13px; scrollbar-width: thin; }
 .home-recommend-card { display: flex; flex-direction: column; gap: 9px; min-height: 209px; width: 160px; padding: 10px; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); color: var(--ink); text-align: left; }
 .home-recommend-card:hover { border-color: var(--accent); }
-.home-recommend-main { display: grid; flex: 1; grid-template-rows: 91px auto auto auto; gap: 5px; width: 100%; min-width: 0; padding: 0; border: 0; background: none; color: inherit; text-align: left; }
+.home-recommend-main { display: grid; flex: 1; grid-template-rows: 91px auto auto auto auto; gap: 5px; width: 100%; min-width: 0; padding: 0; border: 0; background: none; color: inherit; text-align: left; }
 .home-recommend-main:hover strong { color: var(--accent); }
 .home-recommend-card form { margin-top: auto; }
 .home-recommend-price { width: 100%; padding: 6px 9px; border: 1px solid var(--accent); border-radius: 3px; background: var(--accent); color: #fff; font: 600 11px var(--mono); }
@@ -97,10 +97,13 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 .home-recommend-card strong { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; font-size: 12px; line-height: 1.25; }
 .home-recommend-card span, .home-recommend-card small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .home-recommend-card small { align-self: end; }
+.home-recommend-card .home-topics { overflow: visible; white-space: normal; line-height: 1.5; }
+.home-recommend-card .home-topics span { display: inline; overflow: visible; white-space: normal; }
+.home-recommend-card .home-topics strong { display: inline; overflow: visible; font-size: inherit; line-height: inherit; font-weight: 700; color: var(--ink); }
 @media (min-width: 701px) {
   .home-recommend-grid { grid-auto-columns: clamp(220px, 22vw, 250px); gap: 14px; }
   .home-recommend-card { width: 100%; min-height: 310px; gap: 12px; padding: 15px; }
-  .home-recommend-main { grid-template-rows: 153px auto auto auto; gap: 8px; }
+  .home-recommend-main { grid-template-rows: 153px auto auto auto auto; gap: 8px; }
   .home-recommend-card .home-cover { width: 108px; height: 150px; }
   .home-recommend-card strong { -webkit-line-clamp: 3; font-size: 16px; line-height: 1.3; }
   .home-recommend-card span, .home-recommend-card small { font-size: 12px; }

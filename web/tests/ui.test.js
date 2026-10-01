@@ -99,6 +99,8 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     await waitFor(() => calls.some(c => c.name === 'plugin:opener|open_url'));
     assert.equal(calls.find(c => c.name === 'plugin:opener|open_url').args.url, 'https://openlibrary.org/');
     await waitFor(() => $('[data-home-recommend]'));
+    assert.equal($('.home-topics').textContent, 'Fantasy, Sci-fi');
+    assert.equal($('.home-topics strong'), null);
     $('[data-home-recommend]').click();
     await waitFor(() => $('#browse-dialog-synopsis')?.textContent.startsWith('A long Harry Potter'));
     assert.deepEqual([...window.document.querySelectorAll('.browse-topic')].map(topic => topic.textContent), ['Fantasy', 'Sci-fi']);
@@ -137,6 +139,13 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     $('#browse-search').dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     await waitFor(() => calls.some(c => c.name === 'search') && $('.recommend-topics'));
     assert.equal($('.recommend-topics strong'), null);
+    $('[data-nav="inicio"]').click();
+    await waitFor(() => $('.home-topics strong'));
+    assert.equal($('.home-topics strong').textContent, 'Fantasy');
+    assert.equal($('.home-topics').textContent, 'Fantasy, Sci-fi');
+    $('[data-home-recommend]').click();
+    await waitFor(() => $('#browse-topic-list strong'));
+    assert.equal($('#browse-topic-list strong').textContent, 'Fantasy');
     assert.equal(calls.some(c => c.name.includes('/api/')), false);
   } finally { window.close(); }
 });
