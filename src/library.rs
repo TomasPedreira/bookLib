@@ -207,7 +207,7 @@ pub async fn get_book(State(s): State<AppState>, Path(id): Path<i64>) -> ApiResu
     let mut history = Vec::new();
     for r in readings {
         let entries = sqlx::query_as::<_, Progress>(
-            "SELECT * FROM progress_entries WHERE reading_id=? ORDER BY recorded_at DESC, id DESC",
+            "SELECT * FROM progress_entries WHERE reading_id=? ORDER BY substr(recorded_at,1,10) DESC, id DESC",
         )
         .bind(r.id)
         .fetch_all(&s.db)
@@ -254,11 +254,26 @@ pub async fn update_book(
 ) -> ApiResult<Book> {
     book(&s.db, id).await?;
     validate_book(&b)?;
+    let mut tx = s.db.begin().await?;
+    let (page_readings, largest_value): (i64, i64) = sqlx::query_as(
+        "SELECT count(*), COALESCE(MAX(MAX(r.current_value, COALESCE((SELECT MAX(p.value) FROM progress_entries p WHERE p.reading_id=r.id),0))),0) FROM readings r WHERE r.book_id=? AND r.unit='pages'",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if page_readings > 0 {
+        match b.page_count {
+            None => return Err(bad("Não podes remover o número de páginas de um livro com leituras em páginas")),
+            Some(count) if count < largest_value => return Err(bad("O número de páginas não pode ser inferior ao progresso registado")),
+            _ => {}
+        }
+    }
     sqlx::query("UPDATE books SET title=?,authors=?,isbn=?,work_id=?,edition_id=?,cover_url=?,page_count=?,language=?,published=?,description=?,user_rating=?,review=?,notes=?,tags=?,topics=?,updated_at=datetime('now') WHERE id=?")
         .bind(b.title.trim()).bind(b.authors.trim()).bind(b.isbn).bind(b.work_id).bind(b.edition_id)
         .bind(b.cover_url).bind(b.page_count).bind(b.language).bind(b.published)
         .bind(b.description.unwrap_or_default()).bind(b.rating).bind(b.review.unwrap_or_default())
-        .bind(b.notes.unwrap_or_default()).bind(b.tags.unwrap_or_default()).bind(b.topics.unwrap_or_default()).bind(id).execute(&s.db).await?;
+        .bind(b.notes.unwrap_or_default()).bind(b.tags.unwrap_or_default()).bind(b.topics.unwrap_or_default()).bind(id).execute(&mut *tx).await?;
+    tx.commit().await?;
     Ok(Json(book(&s.db, id).await?))
 }
 pub async fn update_rating(
@@ -423,7 +438,7 @@ fn valid_date(date: Option<String>) -> Result<Option<String>, AppError> {
     Ok(date)
 }
 async fn recalc(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, id: i64) -> Result<(), sqlx::Error> {
-    let value = sqlx::query_scalar::<_, i64>("SELECT value FROM progress_entries WHERE reading_id=? ORDER BY recorded_at DESC,id DESC LIMIT 1")
+    let value = sqlx::query_scalar::<_, i64>("SELECT value FROM progress_entries WHERE reading_id=? ORDER BY substr(recorded_at,1,10) DESC,id DESC LIMIT 1")
         .bind(id).fetch_optional(&mut **tx).await?.unwrap_or(0);
     sqlx::query("UPDATE readings SET current_value=? WHERE id=?")
         .bind(value)
@@ -512,7 +527,7 @@ pub async fn stats(State(s): State<AppState>) -> ApiResult<Value> {
         "WITH last_per_day AS (
             SELECT p.reading_id, substr(p.recorded_at, 1, 10) AS day, p.value,
                    ROW_NUMBER() OVER (PARTITION BY p.reading_id, substr(p.recorded_at, 1, 10)
-                                      ORDER BY p.recorded_at DESC, p.id DESC) AS position
+                                      ORDER BY p.id DESC) AS position
             FROM progress_entries p JOIN readings r ON r.id = p.reading_id
             WHERE r.unit = 'pages'
          ), changes AS (
@@ -641,7 +656,75 @@ pub async fn import_data(State(s): State<AppState>, Json(data): Json<Backup>) ->
 
 #[cfg(test)]
 mod tests {
-    use super::{is_date, is_timestamp};
+    use super::*;
+    use std::{sync::Arc, time::Instant};
+
+    async fn test_state() -> AppState {
+        let db = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&db).await.unwrap();
+        AppState {
+            db,
+            http: reqwest::Client::new(),
+            catalog_gate: Arc::new(tokio::sync::Mutex::new(Instant::now())),
+            catalog_cache: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+        }
+    }
+
+    fn book_input(page_count: Option<i64>) -> BookInput {
+        serde_json::from_value(json!({
+            "title": "Test book", "authors": "", "page_count": page_count
+        })).unwrap()
+    }
+
+    #[tokio::test]
+    async fn page_count_edits_preserve_reading_history() {
+        let s = test_state().await;
+        let Json(b) = create_book(State(s.clone()), Json(book_input(Some(300)))).await.unwrap();
+        let Json(r) = start_reading(State(s.clone()), Path(b.id), Json(StartReading { unit: "pages".into() })).await.unwrap();
+        for value in [150, 100] {
+            let _ = add_progress(State(s.clone()), Path(r.id), Json(ProgressInput {
+                value, note: None, recorded_at: Some("2026-10-01".into())
+            })).await.unwrap();
+        }
+        let _ = change_reading(State(s.clone()), Path(r.id), Json(ReadingStatus { status: "completed".into() })).await.unwrap();
+        for count in [None, Some(120)] {
+            let error = update_book(State(s.clone()), Path(b.id), Json(book_input(count))).await.err().unwrap();
+            assert_eq!(error.0, axum::http::StatusCode::BAD_REQUEST);
+            assert_eq!(book(&s.db, b.id).await.unwrap().page_count, Some(300));
+        }
+        let _ = update_book(State(s.clone()), Path(b.id), Json(book_input(Some(150)))).await.unwrap();
+        assert_eq!(book(&s.db, b.id).await.unwrap().page_count, Some(150));
+        let Json(other) = create_book(State(s.clone()), Json(book_input(Some(200)))).await.unwrap();
+        let _ = update_book(State(s.clone()), Path(other.id), Json(book_input(None))).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn mixed_date_formats_use_last_entry_of_each_day() {
+        let s = test_state().await;
+        let Json(b) = create_book(State(s.clone()), Json(book_input(Some(300)))).await.unwrap();
+        let Json(r) = start_reading(State(s.clone()), Path(b.id), Json(StartReading { unit: "pages".into() })).await.unwrap();
+        // Timestamped entries from the API or old backups coexist with UI dates.
+        sqlx::query("INSERT INTO progress_entries (reading_id,value,recorded_at) VALUES (?,20,'2026-10-01 12:00:00')")
+            .bind(r.id).execute(&s.db).await.unwrap();
+        let Json(last) = add_progress(State(s.clone()), Path(r.id), Json(ProgressInput {
+            value: 30, note: None, recorded_at: Some("2026-10-01".into())
+        })).await.unwrap();
+        let _ = add_progress(State(s.clone()), Path(r.id), Json(ProgressInput {
+            value: 10, note: None, recorded_at: Some("2026-09-30".into())
+        })).await.unwrap();
+        assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 30);
+        let Json(detail) = get_book(State(s.clone()), Path(b.id)).await.unwrap();
+        assert_eq!(detail["readings"][0]["progress"][0]["id"], last.id);
+        let Json(summary) = stats(State(s.clone())).await.unwrap();
+        assert_eq!(summary["pages_read"], 30);
+        assert_eq!(summary["daily_pages"][1]["pages"], 20);
+        let _ = delete_progress(State(s.clone()), Path(last.id)).await.unwrap();
+        assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 20);
+    }
 
     #[test]
     fn validates_calendar_dates_and_backup_timestamps() {

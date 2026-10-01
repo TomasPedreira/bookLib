@@ -18,6 +18,8 @@ const topicLabel = key => popularTopics[key] || key.replaceAll('_', ' ');
 
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 const apiErrorTranslations = {
+  'Não podes remover o número de páginas de um livro com leituras em páginas': 'Keep the page count for a book with reading sessions tracked in pages',
+  'O número de páginas não pode ser inferior ao progresso registado': 'Page count cannot be lower than recorded progress',
   'Erro na base de dados': 'Database error',
   'Registo não encontrado': 'Entry not found',
   'Catálogo temporariamente indisponível': 'Catalog temporarily unavailable',
@@ -644,5 +646,5 @@ $('#manual-add').addEventListener('click',()=>openBookForm());
 $('[data-nav="browse"]').addEventListener('click',()=>{ if (state.view === 'browse') showBrowseResults(); });
 $('#backup-open').addEventListener('click',()=>openDialog($('#data-dialog')));
 $('#export-button').addEventListener('click',async()=>{try{const data=await api('/api/export');const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`booklib-${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);notify('Backup downloaded');}catch(e){notify(e.message,true);}});
-$('#import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{const data=JSON.parse(await file.text());if(data.version!==1||!Array.isArray(data.books)||!Array.isArray(data.readings)||!Array.isArray(data.progress_entries))throw new Error('Invalid backup file');if(!confirm(`Restore ${data.books.length} books? Your current data will be replaced.`))return;await api('/api/import',jsonRequest('POST',data));$('#data-dialog').close();await refresh();notify('Library restored');}catch(err){notify(err.message,true);}finally{e.target.value='';}});
+$('#import-file').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{const data=JSON.parse(await file.text());if(![1,2].includes(data.version)||!Array.isArray(data.books)||!Array.isArray(data.readings)||!Array.isArray(data.progress_entries))throw new Error('Invalid backup file');if(!confirm(`Restore ${data.books.length} books? Your current data will be replaced.`))return;await api('/api/import',jsonRequest('POST',data));$('#data-dialog').close();await refresh();notify('Library restored');}catch(err){notify(err.message,true);}finally{e.target.value='';}});
 window.addEventListener('hashchange',navigate); initRecommendations(); navigate(); refresh().catch(e=>notify(e.message,true));
