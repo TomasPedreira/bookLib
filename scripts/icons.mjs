@@ -29,4 +29,4 @@ if (existsSync(android)) {
 }
 mkdirSync(join(assets, 'values'), { recursive: true });
 writeFileSync(join(assets, 'values/ic_launcher_background.xml'),
-  '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <color name="ic_launcher_background">#f4f1e8</color>\n</resources>\n');
+  '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <color name="ic_launcher_background">#ffffff</color>\n</resources>\n');

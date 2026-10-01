@@ -96,6 +96,9 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     submit('#progress-form');
     await waitFor(() => $('#detail-dialog').open && $('#detail-content').textContent.includes('42 / 200 pages'));
     assert.equal($('#page-1').value, '42');
+    assert.equal($('#page-1').nextElementSibling.textContent, '/');
+    assert.equal($('#page-1').nextElementSibling.nextElementSibling.textContent, '200');
+    assert.equal($('#page-1').parentElement.children.length, 3);
 
     // Deliver the actual Tauri channel envelope used by Android's back event.
     callbacks.get(backChannel)({ index: 0, message: { canGoBack: false } });
