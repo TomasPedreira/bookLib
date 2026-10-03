@@ -446,3 +446,5 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 
 .history-day-position { display: grid; gap: 4px; }
 .history-day-position small { color: var(--muted); font-size: 11px; }
+
+.detail-status { grid-column: 1 / -1; }

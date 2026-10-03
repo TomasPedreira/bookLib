@@ -811,6 +811,10 @@ mod tests {
         change_reading(&s, r.id, ReadingStatus { status: "abandoned".into() }).await.unwrap();
         edit_progress(&s, p.id, ProgressInput { value: 500, note: None, recorded_at: Some("2026-10-01".into()) }).await.unwrap();
         assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 500);
+        change_reading(&s, r.id, ReadingStatus { status: "reading".into() }).await.unwrap();
+        assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 500);
+        assert_eq!(book(&s.db, b.id).await.unwrap().status, "reading");
+        assert_eq!(get_book(&s, b.id).await.unwrap()["readings"].as_array().unwrap().len(), 1);
         change_reading(&s, r.id, ReadingStatus { status: "paused".into() }).await.unwrap();
         assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 500);
         change_reading(&s, r.id, ReadingStatus { status: "completed".into() }).await.unwrap();
