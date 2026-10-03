@@ -338,21 +338,43 @@ pub async fn start_reading(s: &AppState, id: i64, input: StartReading) -> Servic
     Ok(reading(&s.db, rid).await?)
 }
 async fn complete_finished_progress(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<(), sqlx::Error> {
-    for statement in include_str!("../migrations/20261003000000_finished_progress.sql").split(';') {
-        if !statement.trim().is_empty() {
-            sqlx::query(statement).execute(&mut **tx).await?;
-        }
-    }
+    sqlx::query("INSERT INTO progress_entries (reading_id,value,recorded_at)
+        SELECT r.id, CASE WHEN r.unit='percent' THEN 100 ELSE b.page_count END,
+            max(COALESCE(r.finished_at,date('now')), COALESCE((SELECT max(substr(recorded_at,1,10)) FROM progress_entries WHERE reading_id=r.id),'0001-01-01'))
+        FROM readings r JOIN books b ON b.id=r.book_id
+        WHERE r.status='completed' AND (r.unit='percent' OR b.page_count IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM progress_entries p WHERE p.reading_id=r.id
+                AND p.value=CASE WHEN r.unit='percent' THEN 100 ELSE b.page_count END)")
+        .execute(&mut **tx).await?;
+    sqlx::query("UPDATE readings SET current_value=CASE WHEN unit='percent' THEN 100
+        ELSE (SELECT page_count FROM books WHERE id=readings.book_id) END
+        WHERE status='completed' AND (unit='percent' OR (SELECT page_count FROM books WHERE id=readings.book_id) IS NOT NULL)")
+        .execute(&mut **tx).await?;
     Ok(())
+}
+
+pub async fn delete_reading(s: &AppState, id: i64) -> ServiceResult<Value> {
+    let mut tx = s.db.begin().await?;
+    let r = sqlx::query_as::<_, Reading>("SELECT * FROM readings WHERE id=?")
+        .bind(id).fetch_optional(&mut *tx).await?.ok_or_else(missing)?;
+    let latest: i64 = sqlx::query_scalar("SELECT id FROM readings WHERE book_id=? ORDER BY id DESC LIMIT 1")
+        .bind(r.book_id).fetch_one(&mut *tx).await?;
+    if latest != id {
+        return Err(bad("Só podes remover a leitura mais recente"));
+    }
+    sqlx::query("DELETE FROM readings WHERE id=?").bind(id).execute(&mut *tx).await?;
+    let previous: Option<String> = sqlx::query_scalar("SELECT status FROM readings WHERE book_id=? ORDER BY id DESC LIMIT 1")
+        .bind(r.book_id).fetch_optional(&mut *tx).await?;
+    sqlx::query("UPDATE books SET status=?,updated_at=datetime('now') WHERE id=?")
+        .bind(previous.unwrap_or_else(|| "want".into())).bind(r.book_id).execute(&mut *tx).await?;
+    tx.commit().await?;
+    Ok(json!({"ok": true}))
 }
 
 pub async fn change_reading(s: &AppState, id: i64, input: ReadingStatus) -> ServiceResult<Reading> {
     let r = reading(&s.db, id).await?;
     if !["reading", "paused", "completed", "abandoned"].contains(&input.status.as_str()) {
         return Err(bad("Estado inválido"));
-    }
-    if r.status == "completed" || r.status == "abandoned" {
-        return Err(bad("Esta leitura já terminou; inicia uma releitura"));
     }
     let latest: i64 =
         sqlx::query_scalar("SELECT id FROM readings WHERE book_id=? ORDER BY id DESC LIMIT 1")
@@ -455,7 +477,10 @@ async fn recalc(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, id: i64) -> Result
         .bind(id)
         .execute(&mut **tx)
         .await?;
-    complete_finished_progress(tx).await?;
+    sqlx::query("UPDATE readings SET current_value=CASE WHEN unit='percent' THEN 100
+        ELSE (SELECT page_count FROM books WHERE id=readings.book_id) END
+        WHERE id=? AND status='completed' AND (unit='percent' OR (SELECT page_count FROM books WHERE id=readings.book_id) IS NOT NULL)")
+        .bind(id).execute(&mut **tx).await?;
     Ok(())
 }
 pub async fn add_progress(s: &AppState, id: i64, input: ProgressInput) -> ServiceResult<Progress> {
@@ -466,9 +491,6 @@ pub async fn add_progress(s: &AppState, id: i64, input: ProgressInput) -> Servic
         .is_some_and(|note| note.len() > 10_000)
     {
         return Err(bad("Texto demasiado longo"));
-    }
-    if r.status != "reading" && r.status != "paused" {
-        return Err(bad("Esta leitura já terminou"));
     }
     let date = valid_date(input.recorded_at)?;
     let mut tx = s.db.begin().await?;
@@ -485,7 +507,7 @@ pub async fn add_progress(s: &AppState, id: i64, input: ProgressInput) -> Servic
 }
 pub async fn edit_progress(s: &AppState, id: i64, input: ProgressInput) -> ServiceResult<Progress> {
     let p = progress(&s.db, id).await?;
-    validate_progress(&s.db, p.reading_id, input.value).await?;
+    let r = validate_progress(&s.db, p.reading_id, input.value).await?;
     if input
         .note
         .as_deref()
@@ -494,6 +516,7 @@ pub async fn edit_progress(s: &AppState, id: i64, input: ProgressInput) -> Servi
         return Err(bad("Texto demasiado longo"));
     }
     let date = valid_date(input.recorded_at)?;
+    let total = if r.unit == "percent" { 100 } else { book(&s.db, r.book_id).await?.page_count.unwrap_or(0) };
     let mut tx = s.db.begin().await?;
     sqlx::query(
         "UPDATE progress_entries SET value=?,note=?,recorded_at=COALESCE(?,recorded_at) WHERE id=?",
@@ -504,6 +527,10 @@ pub async fn edit_progress(s: &AppState, id: i64, input: ProgressInput) -> Servi
     .bind(id)
     .execute(&mut *tx)
     .await?;
+    if r.status == "completed" && input.value == total {
+        sqlx::query("UPDATE readings SET finished_at=(SELECT substr(recorded_at,1,10) FROM progress_entries WHERE id=?) WHERE id=?")
+            .bind(id).bind(r.id).execute(&mut *tx).await?;
+    }
     recalc(&mut tx, p.reading_id).await?;
     tx.commit().await?;
     Ok(progress(&s.db, id).await?)
@@ -692,6 +719,67 @@ mod tests {
             "title": "Test book", "authors": "", "page_count": page_count
         }))
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn closed_states_and_progress_can_be_corrected_in_place() {
+        let s = test_state().await;
+        let b = create_book(&s, book_input(Some(529))).await.unwrap();
+        let r = start_reading(&s, b.id, StartReading { unit: "pages".into() }).await.unwrap();
+        let p = add_progress(&s, r.id, ProgressInput { value: 512, note: None, recorded_at: Some("2026-10-01".into()) }).await.unwrap();
+        change_reading(&s, r.id, ReadingStatus { status: "abandoned".into() }).await.unwrap();
+        edit_progress(&s, p.id, ProgressInput { value: 500, note: None, recorded_at: Some("2026-10-01".into()) }).await.unwrap();
+        assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 500);
+        change_reading(&s, r.id, ReadingStatus { status: "paused".into() }).await.unwrap();
+        assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 500);
+        change_reading(&s, r.id, ReadingStatus { status: "completed".into() }).await.unwrap();
+        assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 529);
+        change_reading(&s, r.id, ReadingStatus { status: "reading".into() }).await.unwrap();
+        assert_eq!(book(&s.db, b.id).await.unwrap().status, "reading");
+        assert_eq!(get_book(&s, b.id).await.unwrap()["readings"].as_array().unwrap().len(), 1);
+        assert_eq!(stats(&s).await.unwrap()["pages_read"], 529);
+    }
+
+    #[tokio::test]
+    async fn accidental_reread_can_be_removed_without_losing_the_original() {
+        let s = test_state().await;
+        let mut input = book_input(Some(500));
+        input.rating = Some(8);
+        let b = create_book(&s, input).await.unwrap();
+        let original = start_reading(&s, b.id, StartReading { unit: "pages".into() }).await.unwrap();
+        change_reading(&s, original.id, ReadingStatus { status: "completed".into() }).await.unwrap();
+        let reread = start_reading(&s, b.id, StartReading { unit: "pages".into() }).await.unwrap();
+        change_reading(&s, reread.id, ReadingStatus { status: "completed".into() }).await.unwrap();
+        assert_eq!(stats(&s).await.unwrap()["pages_read"], 1000);
+        assert!(delete_reading(&s, original.id).await.is_err());
+        delete_reading(&s, reread.id).await.unwrap();
+        assert_eq!(stats(&s).await.unwrap()["pages_read"], 500);
+        assert_eq!(book(&s.db, b.id).await.unwrap().status, "completed");
+        assert_eq!(book(&s.db, b.id).await.unwrap().rating, Some(8));
+        assert_eq!(get_book(&s, b.id).await.unwrap()["readings"].as_array().unwrap().len(), 1);
+        delete_reading(&s, original.id).await.unwrap();
+        assert_eq!(book(&s.db, b.id).await.unwrap().status, "want");
+        assert_eq!(stats(&s).await.unwrap()["pages_read"], 0);
+    }
+
+    #[tokio::test]
+    async fn completed_progress_date_can_be_corrected_without_another_reading() {
+        let s = test_state().await;
+        let b = create_book(&s, book_input(Some(500))).await.unwrap();
+        let r = start_reading(&s, b.id, StartReading { unit: "pages".into() }).await.unwrap();
+        add_progress(&s, r.id, ProgressInput { value: 100, note: None, recorded_at: Some("2026-10-01".into()) }).await.unwrap();
+        change_reading(&s, r.id, ReadingStatus { status: "completed".into() }).await.unwrap();
+        let final_id: i64 = sqlx::query_scalar("SELECT id FROM progress_entries WHERE reading_id=? AND value=500").bind(r.id).fetch_one(&s.db).await.unwrap();
+        edit_progress(&s, final_id, ProgressInput { value: 500, note: None, recorded_at: Some("2026-09-20".into()) }).await.unwrap();
+        assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 500);
+        assert_eq!(reading(&s.db, r.id).await.unwrap().finished_at.as_deref(), Some("2026-09-20"));
+        let data = export_data(&s).await.unwrap();
+        assert_eq!(data["progress_entries"].as_array().unwrap().len(), 2);
+        import_data(&s, serde_json::from_value(data.clone()).unwrap()).await.unwrap();
+        assert_eq!(export_data(&s).await.unwrap(), data);
+        let st = stats(&s).await.unwrap();
+        assert_eq!(st["pages_read"], 500);
+        assert_eq!(st["daily_pages"][0], json!({"date":"2026-09-20", "pages":500}));
     }
 
     #[tokio::test]

@@ -53,6 +53,11 @@ async fn start_reading(
 }
 
 #[tauri::command]
+async fn delete_reading(state: State<'_, AppState>, id: i64) -> ServiceResult<Value> {
+    library::delete_reading(state.inner(), id).await
+}
+
+#[tauri::command]
 async fn change_reading(
     state: State<'_, AppState>,
     id: i64,
@@ -159,6 +164,7 @@ pub fn run() {
             delete_book,
             start_reading,
             change_reading,
+            delete_reading,
             add_progress,
             edit_progress,
             delete_progress,

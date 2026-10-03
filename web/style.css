@@ -431,3 +431,13 @@ main { width: min(100%, 1240px); flex: 1; margin: 0 auto; padding: 36px clamp(20
 }
 
 .row-rating { display: inline-block; margin-left: 8px; color: var(--accent); font: 600 12px var(--mono); white-space: nowrap; }
+
+.reading-history summary { cursor: pointer; font-weight: 600; }
+.reading-history-session { padding: 16px 0; border-bottom: 1px solid var(--line); }
+.reading-history-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-bottom: 10px; }
+.reading-history-head span, .reading-history-entry { font-size: 12px; }
+.reading-history-entry { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; margin-bottom: 10px; }
+.reading-history-entry button { min-height: 44px; padding: 8px 12px; }
+
+.reading-status-edit { display: grid; gap: 6px; margin: 16px 0; }
+.reading-status-edit select { width: 100%; min-height: 44px; }

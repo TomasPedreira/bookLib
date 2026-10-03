@@ -15,6 +15,7 @@ export function createServices(call) {
       rate: (id, rating) => command('update_rating', { id, input: { rating } }),
       remove: id => command('delete_book', { id }),
       start: (id, unit) => command('start_reading', { id, input: { unit } }),
+      removeReading: id => command('delete_reading', { id }),
       status: (id, status) => command('change_reading', { id, input: { status } }),
       addProgress: (id, input) => command('add_progress', { id, input }),
       editProgress: (id, input) => command('edit_progress', { id, input }),

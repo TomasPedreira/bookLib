@@ -67,6 +67,19 @@ test('UI adds a book, records progress, handles back and saves a native backup',
         const entry = { id: 1, reading_id: args.id, ...args.input };
         session.progress.push(entry); return entry;
       }
+      if (name === 'edit_progress') {
+        const session = [...sessions.values()].find(s => s.progress.some(p => p.id === args.id));
+        const entry = session.progress.find(p => p.id === args.id);
+        Object.assign(entry, args.input);
+        session.reading.current_value = args.input.value;
+        return entry;
+      }
+      if (name === 'delete_reading') {
+        const session = [...sessions.values()].find(s => s.reading.id === args.id);
+        sessions.delete(session.reading.book_id);
+        books.find(b => b.id === session.reading.book_id).status = 'want';
+        return { ok: true };
+      }
       if (name === 'export_data') return { version: 2, books, readings: [...sessions.values()].map(s => s.reading), progress_entries: [...sessions.values()].flatMap(s => s.progress) };
       throw new Error(`Unexpected native command: ${name}`);
     },
@@ -220,6 +233,26 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     await waitFor(() => $('#home-books .book-row[data-open="2"]'));
     assert.equal($('#home-books .book-row[data-open="2"] .page-value').textContent, '100%');
     assert.equal($('#home-books .book-row[data-open="2"] .row-rating'), null);
+    $('#detail-dialog').close();
+    $('#home-books .book-row[data-open="1"] .row-title-button').click();
+    await waitFor(() => $('#detail-dialog').open);
+    assert.ok($('[data-action="correct-progress"]'));
+    const statusSelect = $('[data-edit-reading-status]');
+    statusSelect.value = 'abandoned';
+    statusSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await waitFor(() => $('[data-edit-reading-status]')?.value === 'abandoned' && !statusSelect.isConnected);
+    $('[data-edit-progress="1"]').click();
+    assert.equal($('#progress-dialog').open, true);
+    $('#progress-form').elements.value.value = '40';
+    submit('#progress-form');
+    await waitFor(() => $('#detail-dialog').open && calls.some(c => c.name === 'edit_progress'));
+    assert.equal(calls.filter(c => c.name === 'start_reading').length, 2);
+    assert.equal($('#home-books .book-row[data-open="1"] .page-value').textContent, '40 / 200');
+    $('[data-remove-reading="1"]').click();
+    await waitFor(() => $('[data-start-book="1"]'));
+    assert.equal(books[0].rating, 8);
+    assert.equal($('#detail-dialog').open, true);
+    assert.equal($('.reading-history'), null);
     assert.equal(calls.some(c => c.name.includes('/api/')), false);
   } finally { window.close(); }
 });

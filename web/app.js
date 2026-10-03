@@ -330,7 +330,7 @@ function renderDetail() {
   const active = latest && ['reading','paused'].includes(latest.status);
   const progressControls = active
     ? `<button class="primary-button" data-action="progress">Update progress</button>${latest.status === 'paused' ? '<button class="secondary-button" data-status="reading">Resume</button>' : '<button class="secondary-button" data-status="paused">Pause</button>'}<button class="secondary-button" data-status="completed">Finish</button><button class="secondary-button" data-status="abandoned">Abandon</button>`
-    : `<select id="unit-select" aria-label="Progress unit">${book.page_count ? '<option value="pages">Pages</option>' : ''}<option value="percent">Percentage</option></select><button class="primary-button" data-action="start">${readings.length ? 'Read again' : 'Start reading'}</button>`;
+    : `<select id="unit-select" aria-label="Progress unit">${book.page_count ? '<option value="pages">Pages</option>' : ''}<option value="percent">Percentage</option></select><button class="primary-button" data-action="start">${readings.length ? 'Read again' : 'Start reading'}</button>${latest ? '<button type="button" class="secondary-button" data-action="correct-progress">Edit progress</button>' : ''}`;
   const metadata = [languageLabel(book.language), book.published, book.page_count ? `${book.page_count} pages` : null, book.isbn ? `ISBN ${book.isbn}` : null].filter(Boolean).map(escapeHtml).join(', ');
   const pencil = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13 7 4 4"/></svg>';
   const bin = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 7V4h4v3m4 0-1 13H7L6 7M10 10v7m4-7v7"/></svg>';
@@ -347,7 +347,8 @@ function renderDetail() {
     ${book.description ? `<section class="detail-section"><h3>About this book</h3><p>${escapeHtml(book.description)}</p></section>` : ''}
     ${book.tags ? `<section class="detail-section"><h3>Tags</h3><p>${escapeHtml(book.tags)}</p></section>` : ''}
     ${book.review ? `<section class="detail-section"><h3>Your review</h3><p>${escapeHtml(book.review)}</p></section>` : ''}
-    ${book.notes ? `<section class="detail-section"><h3>Notes</h3><p>${escapeHtml(book.notes)}</p></section>` : ''}`;
+    ${book.notes ? `<section class="detail-section"><h3>Notes</h3><p>${escapeHtml(book.notes)}</p></section>` : ''}
+    ${readings.length ? `<details class="detail-section reading-history"><summary>Reading history</summary>${readings.map(({reading, progress}, index) => `<section class="reading-history-session"><div class="reading-history-head"><strong>${labels[reading.status]}</strong><span>${escapeHtml(reading.started_at)}${reading.finished_at ? ` → ${escapeHtml(reading.finished_at)}` : ''}</span></div>${progress.map(entry => `<div class="reading-history-entry"><span>${escapeHtml(entry.recorded_at.slice(0,10))}</span><span>${entry.value}${reading.unit === 'percent' ? '%' : ` / ${book.page_count || '?'}`}</span><button type="button" class="secondary-button" data-edit-progress="${entry.id}" aria-label="Edit progress on ${escapeHtml(entry.recorded_at.slice(0,10))}">Edit</button></div>`).join('')}${index === 0 ? `<label class="reading-status-edit">Status<select data-edit-reading-status="${reading.id}" aria-label="Reading status">${['reading','paused','completed','abandoned'].map(status => `<option value="${status}"${reading.status === status ? ' selected' : ''}>${labels[status]}</option>`).join('')}</select></label><button type="button" class="secondary-button danger" data-remove-reading="${reading.id}">Remove this reading</button>` : ''}</section>`).join('')}</details>` : ''}`;
 }
 function openProgress(entry = null) {
   const {book, readings} = state.selected; const r = readings.find(x => x.progress.some(p => p.id === entry?.id))?.reading || readings[0]?.reading;
@@ -553,6 +554,27 @@ document.addEventListener('click', async event => {
   if (homeRecommendation) { openBrowseWork(state.visibleHomeRecommendations[Number(homeRecommendation.dataset.homeRecommend)]); return; }
   const step = event.target.closest('[data-step]'); if (step) { const id = Number(step.dataset.book); const item = state.books.find(({book}) => book.id === id); if (item?.reading) await saveInlineProgress(id, item.reading.current_value + Number(step.dataset.step)); return; }
   const progress = event.target.closest('[data-progress]'); if (progress) { try { state.selected = await library.get(Number(progress.dataset.progress)); openProgress(); } catch(e) { notify(e.message,true); } return; }
+  const editProgress = event.target.closest('[data-edit-progress]');
+  if (editProgress) {
+    const entry = state.selected.readings.flatMap(session => session.progress).find(entry => entry.id === Number(editProgress.dataset.editProgress));
+    if (entry) openProgress(entry);
+    return;
+  }
+  const removeReading = event.target.closest('[data-remove-reading]');
+  if (removeReading) {
+    if (removeReading.disabled) return;
+    if (!await confirmAction('Remove this reading and its progress? The book, rating and earlier readings will be kept.')) return;
+    removeReading.disabled = true;
+    try {
+      const bookId = state.selected.book.id;
+      await library.removeReading(Number(removeReading.dataset.removeReading));
+      state.selected = await library.get(bookId);
+      renderDetail();
+      await refresh();
+      notify('Reading removed');
+    } catch (error) { removeReading.disabled = false; notify(error.message, true); }
+    return;
+  }
   const startBook = event.target.closest('[data-start-book]');
   if (startBook) {
     const item = state.books.find(({book}) => book.id === Number(startBook.dataset.startBook));
@@ -574,11 +596,32 @@ document.addEventListener('click', async event => {
     if (name === 'edit-book') { const b = state.selected.book; $('#detail-dialog').close(); openBookForm(b); return; }
     if (name === 'delete-book') { const b = state.selected.book; if (!await confirmAction(`Remove “${b.title}” and all its reading history?`)) return; try { await library.remove(b.id); $('#detail-dialog').close(); await refresh(); notify('Book removed'); } catch(e) { notify(e.message,true); } return; }
     if (name === 'start') { try { await library.start(state.selected.book.id, $('#unit-select').value); state.selected = await library.get(state.selected.book.id); renderDetail(); await refresh(); notify('Reading started'); } catch(e) { notify(e.message,true); } return; }
+    if (name === 'correct-progress') {
+      const {reading, progress} = state.selected.readings[0];
+      const total = reading.unit === 'percent' ? 100 : state.selected.book.page_count;
+      openProgress((reading.status === 'completed' ? progress.find(entry => entry.value === total) : progress[0]) || null);
+      return;
+    }
     if (name === 'progress') { openProgress(); return; }
   }
   const status = event.target.closest('[data-status]'); if (status) { try { await library.status(state.selected.readings[0].reading.id, status.dataset.status); state.selected = await library.get(state.selected.book.id); renderDetail(); await refresh(); notify('Status updated'); } catch(e) { notify(e.message,true); } return; }
 });
 document.addEventListener('change', async event => {
+  if (event.target.matches('[data-edit-reading-status]')) {
+    const input = event.target;
+    const previous = state.selected.readings[0].reading.status;
+    input.disabled = true;
+    try {
+      const bookId = state.selected.book.id;
+      await library.status(Number(input.dataset.editReadingStatus), input.value);
+      state.selected = await library.get(bookId);
+      renderDetail();
+      await refresh();
+      notify('Status updated');
+    } catch (error) { input.value = previous; input.disabled = false; notify(error.message, true); }
+    return;
+  }
+
   if (event.target.id === 'detail-rating') {
     const input = event.target;
     const oldRating = state.selected.book.rating;
@@ -605,7 +648,7 @@ document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === 
 $('#book-form').addEventListener('submit', async e => { e.preventDefault(); const payload = bookPayload(e.currentTarget); try { const b = await (state.bookEdit ? library.update(state.bookEdit.id, payload) : library.create(payload)); $('#book-dialog').close(); await refresh(); notify('Book saved'); openDetail(b.id); } catch(err) { notify(err.message,true); } });
 $('#page-count-form').addEventListener('submit', e => { e.preventDefault(); if (!state.pendingEdition) return; const count = Number(e.currentTarget.elements.page_count.value); if (!Number.isInteger(count) || count < 1) return; createImportedBook({...state.pendingEdition, page_count: count}); });
 $('#skip-pages').addEventListener('click', () => { if (state.pendingEdition) createImportedBook({...state.pendingEdition, page_count: null}); });
-$('#progress-form').addEventListener('submit', async e => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); const payload = {value:Number(data.value),note:data.note,recorded_at:data.recorded_at}; const rid = state.selected.readings[0].reading.id; try { await (state.progressEdit ? library.editProgress(state.progressEdit.id, payload) : library.addProgress(rid, payload)); $('#progress-dialog').close(); state.selected = await library.get(state.selected.book.id); await refresh(); renderDetail(); openDialog($('#detail-dialog')); notify('Progress saved'); } catch(err) { notify(err.message,true); } });
+$('#progress-form').addEventListener('submit', async e => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); const payload = {value:Number(data.value),note:data.note,recorded_at:data.recorded_at}; const rid = state.progressEdit?.reading_id ?? state.selected.readings[0].reading.id; try { await (state.progressEdit ? library.editProgress(state.progressEdit.id, payload) : library.addProgress(rid, payload)); $('#progress-dialog').close(); state.selected = await library.get(state.selected.book.id); await refresh(); renderDetail(); openDialog($('#detail-dialog')); notify('Progress saved'); } catch(err) { notify(err.message,true); } });
 $('#library-search').addEventListener('input',renderLibrary); $('#library-sort').addEventListener('change',renderLibrary);
 $('#library-filters').addEventListener('click',e => { const b=e.target.closest('[data-filter]'); if(!b)return; state.filter=b.dataset.filter; $$('[data-filter]').forEach(x=>x.classList.toggle('active',x===b)); renderLibrary(); });
 $('#filter-toggle').addEventListener('click', () => {
