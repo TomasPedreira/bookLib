@@ -49,6 +49,11 @@ test('UI adds a book, records progress, handles back and saves a native backup',
         sessions.set(args.id, { reading, progress: [] });
         books.find(b => b.id === args.id).status = 'reading'; return reading;
       }
+      if (name === 'update_book') {
+        const book = books.find(b => b.id === args.id);
+        Object.assign(book, args.b);
+        return book;
+      }
       if (name === 'update_rating') {
         const book = books.find(b => b.id === args.id);
         book.rating = args.input.rating;
@@ -210,9 +215,14 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     assert.ok($('[data-action="start"]'));
     $('#detail-dialog').close();
     $('[data-start-book="2"]').click();
+    await waitFor(() => $('#page-count-dialog').open);
+    assert.equal(calls.filter(c => c.name === 'start_reading').length, 1);
+    assert.equal($('#skip-pages').hidden, true);
+    $('#page-count-form').elements.page_count.value = '300';
+    submit('#page-count-form');
     await waitFor(() => $('#page-2'));
-    assert.equal(calls.filter(c => c.name === 'start_reading').at(-1).args.input.unit, 'percent');
-    assert.equal($('#page-2').nextElementSibling.textContent, '%');
+    assert.equal(calls.filter(c => c.name === 'start_reading').at(-1).args.input.unit, 'pages');
+    assert.equal($('#page-2').nextElementSibling.textContent, '/');
     assert.equal($('#detail-dialog').open, false);
     $('.reading-book[data-open="1"]').click();
     await waitFor(() => $('#detail-dialog').open);
@@ -231,7 +241,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     await waitFor(() => $('#detail-dialog').open);
     $('[data-status="completed"]').click();
     await waitFor(() => $('#home-books .book-row[data-open="2"]'));
-    assert.equal($('#home-books .book-row[data-open="2"] .page-value').textContent, '100%');
+    assert.equal($('#home-books .book-row[data-open="2"] .page-value').textContent, '300 / 300');
     assert.equal($('#home-books .book-row[data-open="2"] .row-rating'), null);
     $('#detail-dialog').close();
     $('#home-books .book-row[data-open="1"] .row-title-button').click();
@@ -241,11 +251,43 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     statusSelect.value = 'abandoned';
     statusSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
     await waitFor(() => $('[data-edit-reading-status]')?.value === 'abandoned' && !statusSelect.isConnected);
+    $('.reading-history').open = true;
+    $('#detail-content').scrollTop = 120;
     $('[data-edit-progress="1"]').click();
-    assert.equal($('#progress-dialog').open, true);
-    $('#progress-form').elements.value.value = '40';
-    submit('#progress-form');
+    assert.equal($('#detail-dialog').open, true);
+    assert.equal($('#progress-dialog').open, false);
+    assert.equal($('.reading-history').open, true);
+    $('[data-cancel-history]').click();
+    assert.equal($('.reading-history').open, true);
+    assert.equal($('#detail-content').scrollTop, 120);
+    assert.equal($('[data-save-history]'), null);
+    $('[data-edit-progress="1"]').click();
+    callbacks.get(backChannel)({ index: 1, message: { canGoBack: false } });
+    assert.equal($('#detail-dialog').open, true);
+    assert.equal($('.reading-history').open, true);
+    assert.equal($('[data-save-history]'), null);
+    $('[data-edit-progress="1"]').click();
+    $('[data-save-history]').elements.value.value = '40';
+    const draftForm = $('[data-save-history]');
+    $('#detail-rating').value = '9';
+    $('#detail-rating').dispatchEvent(new window.Event('change', { bubbles: true }));
+    await waitFor(() => !draftForm.isConnected);
+    assert.equal($('[data-save-history]').elements.value.value, '40');
+    assert.equal($('.reading-history').open, true);
+    const nextForm = $('[data-save-history]');
+    $('#detail-rating').value = '8';
+    $('#detail-rating').dispatchEvent(new window.Event('change', { bubbles: true }));
+    await waitFor(() => !nextForm.isConnected);
+    assert.equal($('[data-save-history]').elements.value.value, '40');
+    submit('[data-save-history]');
     await waitFor(() => $('#detail-dialog').open && calls.some(c => c.name === 'edit_progress'));
+    await waitFor(() => $('[data-save-history]') === null);
+    assert.equal($('.reading-history').open, true);
+    assert.equal($('#detail-content').scrollTop, 120);
+    assert.equal($('#detail-dialog').open, true);
+    assert.equal($('#progress-dialog').open, false);
+    assert.equal($('#unit-select'), null);
+    assert.equal(calls.some(c => c.name === 'start_reading' && c.args.input.unit !== 'pages'), false);
     assert.equal(calls.filter(c => c.name === 'start_reading').length, 2);
     assert.equal($('#home-books .book-row[data-open="1"] .page-value').textContent, '40 / 200');
     $('[data-remove-reading="1"]').click();

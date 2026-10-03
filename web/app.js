@@ -23,8 +23,8 @@ function dateLabel(value) { if (!value) return ''; const d = new Date(String(val
 function today() { return new Date().toLocaleDateString('sv-SE'); }
 function notify(message, error = false) { const el = $('#toast'); el.textContent = message; el.className = `toast show${error ? ' error' : ''}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.className = 'toast', 3500); }
 function coverHtml(book, cls = '') { const src = safeImage(book.cover_url); return `<div class="${cls || 'cover-wrap'}">${src ? `<img src="${src}" alt="Cover of ${escapeHtml(book.title)}" loading="lazy"><span class="cover-fallback" hidden>${escapeHtml(book.title)}</span>` : `<span class="cover-fallback">${escapeHtml(book.title)}</span>`}</div>`; }
-function progressPct(book, reading) { if (!reading) return 0; const max = reading.unit === 'percent' ? 100 : book.page_count; return max ? Math.min(100, Math.round(100 * reading.current_value / max)) : 0; }
-function readingText(book, reading) { return reading.unit === 'percent' ? `${reading.current_value}%` : `${reading.current_value} / ${book.page_count || '?'} pages`; }
+function progressPct(book, reading) { if (!reading || reading.unit !== 'pages') return 0; const max = book.page_count; return max ? Math.min(100, Math.round(100 * reading.current_value / max)) : 0; }
+function readingText(book, reading) { return reading.unit !== 'pages' ? 'Set total pages to show progress' : `${reading.current_value} / ${book.page_count || '?'} pages`; }
 function empty(title, text, action = '') { return `<div class="empty-state"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p>${action}</div>`; }
 
 async function refresh() {
@@ -214,16 +214,17 @@ function plannedCard({book}) {
   return `<article class="planned-card" data-open="${book.id}"><button class="planned-main" type="button" aria-label="Open details for ${escapeHtml(book.title)}">${coverHtml(book, 'planned-cover')}<span class="planned-info"><strong>${escapeHtml(book.title)}</strong><span>${escapeHtml(book.authors || 'Unknown author')}</span></span></button><div class="planned-actions"><button class="planned-start" type="button" data-start-book="${book.id}">Start reading</button><form class="planned-buy-form" action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(book.title)}"><input type="hidden" name="i" value="stripbooks"><button class="planned-buy" type="submit" aria-label="Search prices for ${escapeHtml(book.title)} on Amazon">Prices</button></form></div></article>`;
 }
 function readingCard({book, reading}) {
-  const max = reading.unit === 'percent' ? 100 : book.page_count;
-  const unit = reading.unit === 'percent' ? 'percentage point' : 'page';
+  const max = book.page_count;
+  if (!book.page_count || reading.unit !== 'pages') return `<article class="reading-card"><button class="reading-book" type="button" data-open="${book.id}">${coverHtml(book, 'reading-cover')}<strong>${escapeHtml(book.title)}</strong></button><div class="reading-page"><button class="primary-button" data-set-pages="${book.id}">Set total pages</button></div></article>`;
+  const unit = 'page';
   const digits = Math.max(String(max || 0).length, String(reading.current_value).length, 2);
-  const numberUnits = reading.unit === 'percent' ? digits * 0.6 + 1.2 : digits * 1.2 + 0.6;
-  return `<article class="reading-card"><button class="reading-book" type="button" data-open="${book.id}" aria-label="Open details for ${escapeHtml(book.title)}">${coverHtml(book, 'reading-cover')}<strong>${escapeHtml(book.title)}</strong><span class="reading-author">${escapeHtml(book.authors || 'Unknown author')}</span></button><div class="reading-page"><label for="page-${book.id}">${reading.unit === 'percent' ? 'Progress' : 'Page'}</label><div class="page-controls"><div class="page-number${reading.unit === 'percent' ? ' page-number-percent' : ''}" style="--page-number-units:${numberUnits}"><input id="page-${book.id}" data-page-input="${book.id}" type="number" inputmode="numeric" min="0" max="${max}" value="${reading.current_value}" aria-label="Current ${reading.unit === 'percent' ? 'percentage' : 'page'} for ${escapeHtml(book.title)}">${reading.unit === 'percent' ? '<span class="page-total">%</span>' : `<span class="page-separator" aria-hidden="true">/</span><span class="page-total" aria-label="Total pages">${max || '—'}</span>`}</div><div class="step-buttons"><button type="button" data-step="1" data-book="${book.id}" aria-label="Increase ${unit} for ${escapeHtml(book.title)}" ${reading.current_value >= max ? 'disabled' : ''}>+</button><button type="button" data-step="-1" data-book="${book.id}" aria-label="Decrease ${unit} for ${escapeHtml(book.title)}" ${reading.current_value <= 0 ? 'disabled' : ''}>−</button></div></div><div class="progress-line" role="progressbar" aria-valuenow="${progressPct(book, reading)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${progressPct(book, reading)}%"></span></div></div></article>`;
+  const numberUnits = digits * 1.2 + 0.6;
+  return `<article class="reading-card"><button class="reading-book" type="button" data-open="${book.id}" aria-label="Open details for ${escapeHtml(book.title)}">${coverHtml(book, 'reading-cover')}<strong>${escapeHtml(book.title)}</strong><span class="reading-author">${escapeHtml(book.authors || 'Unknown author')}</span></button><div class="reading-page"><label for="page-${book.id}">Page</label><div class="page-controls"><div class="page-number" style="--page-number-units:${numberUnits}"><input id="page-${book.id}" data-page-input="${book.id}" type="number" inputmode="numeric" min="0" max="${max}" value="${reading.current_value}" aria-label="Current page for ${escapeHtml(book.title)}"><span class="page-separator" aria-hidden="true">/</span><span class="page-total" aria-label="Total pages">${max || '—'}</span></div><div class="step-buttons"><button type="button" data-step="1" data-book="${book.id}" aria-label="Increase ${unit} for ${escapeHtml(book.title)}" ${reading.current_value >= max ? 'disabled' : ''}>+</button><button type="button" data-step="-1" data-book="${book.id}" aria-label="Decrease ${unit} for ${escapeHtml(book.title)}" ${reading.current_value <= 0 ? 'disabled' : ''}>−</button></div></div><div class="progress-line" role="progressbar" aria-valuenow="${progressPct(book, reading)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${progressPct(book, reading)}%"></span></div></div></article>`;
 }
 async function saveInlineProgress(bookId, value) {
   const item = state.books.find(({book}) => book.id === bookId);
   if (!item?.reading || state.pendingProgress.has(bookId)) return;
-  const max = item.reading.unit === 'percent' ? 100 : item.book.page_count;
+  const max = item.book.page_count;
   if (!Number.isInteger(value) || value < 0 || value > max) { notify(`Enter a value between 0 and ${max}`, true); renderDashboard(); return; }
   if (value === item.reading.current_value) return;
   state.pendingProgress.add(bookId);
@@ -236,7 +237,7 @@ async function saveInlineProgress(bookId, value) {
 }
 function bookRow({book, reading}) {
   const active = reading && ['reading', 'paused'].includes(book.status);
-  const progress = reading ? `<div class="row-progress"><div class="row-progress-head"><strong class="page-value">${reading.unit === 'percent' ? `${reading.current_value}<small>%</small>` : `${reading.current_value} / ${book.page_count || '?'}`}</strong></div><div class="progress-line" role="progressbar" aria-valuenow="${progressPct(book, reading)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${progressPct(book, reading)}%"></span></div></div>` : `<div class="row-progress row-progress-empty"><strong>Not started</strong></div>`;
+  const progress = reading ? `<div class="row-progress"><div class="row-progress-head"><strong class="page-value">${reading.unit === 'pages' ? `${reading.current_value} / ${book.page_count || '?'}` : 'Set total pages'}</strong></div><div class="progress-line" role="progressbar" aria-valuenow="${progressPct(book, reading)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${progressPct(book, reading)}%"></span></div></div>` : `<div class="row-progress row-progress-empty"><strong>Not started</strong></div>`;
   return `<article class="book-row" data-open="${book.id}" tabindex="0" aria-label="Open ${escapeHtml(book.title)}">${coverHtml(book, 'row-cover')}<div class="row-main"><h3><button class="row-title-button" type="button">${escapeHtml(book.title)}</button></h3><p>${escapeHtml(book.authors || 'Unknown author')}</p><span class="pill ${book.status}">${labels[book.status] || 'Book'}</span>${book.rating != null ? `<span class="row-rating" aria-label="Your rating: ${book.rating} out of 10">★ ${book.rating}/10</span>` : ''}</div>${progress}<div class="row-action">${active ? `<button class="row-update" type="button" data-progress="${book.id}" aria-label="Update progress for ${escapeHtml(book.title)}">Update <span aria-hidden="true">↗</span></button>` : '<span aria-hidden="true">→</span>'}</div></article>`;
 }
 function renderLibrary() {
@@ -326,11 +327,17 @@ async function openDetail(id) {
 }
 function renderDetail() {
   const {book, readings} = state.selected;
+  const content = $('#detail-content');
+  const keepHistory = Number(content.dataset.bookId) === book.id && Boolean($('.reading-history', content)?.open);
+  const keepScroll = Number(content.dataset.bookId) === book.id ? content.scrollTop : 0;
+  const editing = Number(content.dataset.bookId) === book.id ? $('[data-save-history]', content) : null;
+  const draft = editing ? {id: Number(editing.dataset.saveHistory), fields: Object.fromEntries(new FormData(editing))} : null;
+  content.dataset.bookId = book.id;
   const latest = readings[0]?.reading;
   const active = latest && ['reading','paused'].includes(latest.status);
   const progressControls = active
     ? `<button class="primary-button" data-action="progress">Update progress</button>${latest.status === 'paused' ? '<button class="secondary-button" data-status="reading">Resume</button>' : '<button class="secondary-button" data-status="paused">Pause</button>'}<button class="secondary-button" data-status="completed">Finish</button><button class="secondary-button" data-status="abandoned">Abandon</button>`
-    : `<select id="unit-select" aria-label="Progress unit">${book.page_count ? '<option value="pages">Pages</option>' : ''}<option value="percent">Percentage</option></select><button class="primary-button" data-action="start">${readings.length ? 'Read again' : 'Start reading'}</button>${latest ? '<button type="button" class="secondary-button" data-action="correct-progress">Edit progress</button>' : ''}`;
+    : `<button class="primary-button" data-action="start">${readings.length ? 'Read again' : 'Start reading'}</button>${latest ? '<button type="button" class="secondary-button" data-action="correct-progress">Edit progress</button>' : ''}`;
   const metadata = [languageLabel(book.language), book.published, book.page_count ? `${book.page_count} pages` : null, book.isbn ? `ISBN ${book.isbn}` : null].filter(Boolean).map(escapeHtml).join(', ');
   const pencil = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13 7 4 4"/></svg>';
   const bin = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 7V4h4v3m4 0-1 13H7L6 7M10 10v7m4-7v7"/></svg>';
@@ -348,16 +355,62 @@ function renderDetail() {
     ${book.tags ? `<section class="detail-section"><h3>Tags</h3><p>${escapeHtml(book.tags)}</p></section>` : ''}
     ${book.review ? `<section class="detail-section"><h3>Your review</h3><p>${escapeHtml(book.review)}</p></section>` : ''}
     ${book.notes ? `<section class="detail-section"><h3>Notes</h3><p>${escapeHtml(book.notes)}</p></section>` : ''}
-    ${readings.length ? `<details class="detail-section reading-history"><summary>Reading history</summary>${readings.map(({reading, progress}, index) => `<section class="reading-history-session"><div class="reading-history-head"><strong>${labels[reading.status]}</strong><span>${escapeHtml(reading.started_at)}${reading.finished_at ? ` → ${escapeHtml(reading.finished_at)}` : ''}</span></div>${progress.map(entry => `<div class="reading-history-entry"><span>${escapeHtml(entry.recorded_at.slice(0,10))}</span><span>${entry.value}${reading.unit === 'percent' ? '%' : ` / ${book.page_count || '?'}`}</span><button type="button" class="secondary-button" data-edit-progress="${entry.id}" aria-label="Edit progress on ${escapeHtml(entry.recorded_at.slice(0,10))}">Edit</button></div>`).join('')}${index === 0 ? `<label class="reading-status-edit">Status<select data-edit-reading-status="${reading.id}" aria-label="Reading status">${['reading','paused','completed','abandoned'].map(status => `<option value="${status}"${reading.status === status ? ' selected' : ''}>${labels[status]}</option>`).join('')}</select></label><button type="button" class="secondary-button danger" data-remove-reading="${reading.id}">Remove this reading</button>` : ''}</section>`).join('')}</details>` : ''}`;
+    ${readings.length ? `<details class="detail-section reading-history"><summary>Reading history</summary>${readings.map(({reading, progress}, index) => `<section class="reading-history-session"><div class="reading-history-head"><strong>${labels[reading.status]}</strong><span>${escapeHtml(reading.started_at)}${reading.finished_at ? ` → ${escapeHtml(reading.finished_at)}` : ''}</span></div>${progress.map(entry => `<div class="reading-history-entry" data-history-entry="${entry.id}"><span>${escapeHtml(entry.recorded_at.slice(0,10))}</span><span>${reading.unit === 'pages' ? `${entry.value} / ${book.page_count || '?'}` : 'Set total pages'}</span><button type="button" class="secondary-button" data-edit-progress="${entry.id}" aria-label="Edit progress on ${escapeHtml(entry.recorded_at.slice(0,10))}">Edit</button></div>`).join('')}${index === 0 ? `<label class="reading-status-edit">Status<select data-edit-reading-status="${reading.id}" aria-label="Reading status">${['reading','paused','completed','abandoned'].map(status => `<option value="${status}"${reading.status === status ? ' selected' : ''}>${labels[status]}</option>`).join('')}</select></label><button type="button" class="secondary-button danger" data-remove-reading="${reading.id}">Remove this reading</button>` : ''}</section>`).join('')}</details>` : ''}`;
+  if (keepHistory && $('.reading-history', content)) $('.reading-history', content).open = true;
+  if (draft) { const entry = readings.flatMap(session => session.progress).find(entry => entry.id === draft.id); if (entry) editHistoryEntry(entry, draft.fields); }
+  content.scrollTop = keepScroll;
 }
+function requestPageCount(book, start = false) {
+  state.pendingPageBook = {book, start, returnToDetail: $('#detail-dialog').open};
+  state.pendingEdition = null;
+  if ($('#detail-dialog').open) $('#detail-dialog').close();
+  $('#page-count-form').reset();
+  $('#page-count-book').textContent = book.title;
+  $('#page-count-help').textContent = 'Enter the total number of pages in your copy.';
+  $('#skip-pages').hidden = true;
+  $('#page-count-form button[type="submit"]').textContent = start ? 'Start reading' : 'Save pages';
+  openDialog($('#page-count-dialog'));
+}
+function editHistoryEntry(entry, draft = null) {
+  if ($('[data-save-history]') && !draft) return;
+  const session = state.selected.readings.find(session => session.progress.some(p => p.id === entry.id));
+  if (!state.selected.book.page_count || session.reading.unit !== 'pages') { requestPageCount(state.selected.book); return; }
+  const history = $('.reading-history');
+  history.open = true;
+  const row = $(`[data-history-entry="${entry.id}"]`);
+  const values = draft || entry;
+  row.innerHTML = `<form class="history-edit-form" data-save-history="${entry.id}"><div class="form-grid"><label>Page<input name="value" type="number" inputmode="numeric" min="0" max="${state.selected.book.page_count}" value="${escapeHtml(values.value)}" required></label><label>Date<input name="recorded_at" type="date" value="${escapeHtml(values.recorded_at.slice(0,10))}" required></label><label class="wide">Note<textarea name="note" rows="2">${escapeHtml(values.note)}</textarea></label></div><div class="history-edit-actions"><button type="button" class="secondary-button" data-cancel-history>Cancel</button><button type="submit" class="primary-button">Save</button></div></form>`;
+  $$('[data-edit-progress]', history).forEach(button => button.disabled = true);
+}
+document.addEventListener('submit', async event => {
+  const form = event.target.closest('[data-save-history]');
+  if (!form) return;
+  event.preventDefault();
+  const fields = Object.fromEntries(new FormData(form));
+  const bookId = state.selected.book.id;
+  const scroll = $('#detail-content').scrollTop;
+  const buttons = $$('button', form);
+  buttons.forEach(button => button.disabled = true);
+  try {
+    await library.editProgress(Number(form.dataset.saveHistory), {value: Number(fields.value), recorded_at: fields.recorded_at, note: fields.note});
+    state.selected = await library.get(bookId);
+    form.remove();
+    renderDetail();
+    $('#detail-content').scrollTop = scroll;
+    await refresh();
+    notify('Progress saved');
+  } catch (error) { buttons.forEach(button => button.disabled = false); notify(error.message, true); }
+});
+
 function openProgress(entry = null) {
   const {book, readings} = state.selected; const r = readings.find(x => x.progress.some(p => p.id === entry?.id))?.reading || readings[0]?.reading;
   if (!r) return;
+  if (!book.page_count || r.unit !== 'pages') { requestPageCount(book); return; }
   state.progressEdit = entry;
   $('#progress-form').reset();
   $('#progress-heading').textContent = entry ? 'Edit progress' : 'Update progress';
-  $('#progress-context').textContent = `${book.title}, ${r.unit === 'percent' ? 'percentage (0–100)' : `page (0–${book.page_count})`}`;
-  $('#progress-form').elements.value.max = r.unit === 'percent' ? 100 : book.page_count;
+  $('#progress-context').textContent = `${book.title}, page (0–${book.page_count})`;
+  $('#progress-form').elements.value.max = book.page_count;
   $('#progress-form').elements.value.value = entry?.value ?? r.current_value;
   $('#progress-form').elements.note.value = entry?.note || '';
   $('#progress-form').elements.recorded_at.value = entry?.recorded_at?.slice(0,10) || today();
@@ -498,6 +551,10 @@ async function importEdition(index) {
   const ed = state.editionItems[index]; if (!ed) return;
   const payload = {title:ed.title || state.work.title, authors:(state.work.authors || []).join(', '), isbn:ed.isbn || null, work_id:ed.work_id, edition_id:ed.edition_id, cover_url:ed.cover_url || state.work.cover_url, page_count:ed.page_count || null, language:ed.language || null, published:ed.published || null, description:'', source:'openlibrary', rating:null, review:'', notes:'', tags:''};
   if (!payload.page_count) {
+    state.pendingPageBook = null;
+    $('#skip-pages').hidden = false;
+    $('#page-count-form button[type="submit"]').textContent = 'Add book';
+    $('#page-count-help').textContent = 'Enter the number of pages from your copy, or save it without a page count.';
     state.pendingEdition = payload;
     $('#page-count-form').reset();
     $('#page-count-book').textContent = payload.title;
@@ -554,10 +611,14 @@ document.addEventListener('click', async event => {
   if (homeRecommendation) { openBrowseWork(state.visibleHomeRecommendations[Number(homeRecommendation.dataset.homeRecommend)]); return; }
   const step = event.target.closest('[data-step]'); if (step) { const id = Number(step.dataset.book); const item = state.books.find(({book}) => book.id === id); if (item?.reading) await saveInlineProgress(id, item.reading.current_value + Number(step.dataset.step)); return; }
   const progress = event.target.closest('[data-progress]'); if (progress) { try { state.selected = await library.get(Number(progress.dataset.progress)); openProgress(); } catch(e) { notify(e.message,true); } return; }
+  const setPages = event.target.closest('[data-set-pages]');
+  if (setPages) { const item = state.books.find(item => item.book.id === Number(setPages.dataset.setPages)); if (item) requestPageCount(item.book); return; }
+  const cancelHistory = event.target.closest('[data-cancel-history]');
+  if (cancelHistory) { cancelHistory.closest('form').remove(); renderDetail(); return; }
   const editProgress = event.target.closest('[data-edit-progress]');
   if (editProgress) {
     const entry = state.selected.readings.flatMap(session => session.progress).find(entry => entry.id === Number(editProgress.dataset.editProgress));
-    if (entry) openProgress(entry);
+    if (entry) editHistoryEntry(entry);
     return;
   }
   const removeReading = event.target.closest('[data-remove-reading]');
@@ -581,7 +642,8 @@ document.addEventListener('click', async event => {
     if (!item || item.book.status !== 'want' || startBook.disabled) return;
     startBook.disabled = true;
     try {
-      await library.start(item.book.id, item.book.page_count ? 'pages' : 'percent');
+      if (!item.book.page_count) { startBook.disabled = false; requestPageCount(item.book, true); return; }
+      await library.start(item.book.id, 'pages');
       await refresh();
       notify('Reading started');
     } catch (error) { startBook.disabled = false; notify(error.message, true); }
@@ -595,11 +657,12 @@ document.addEventListener('click', async event => {
     if (name === 'manual') { openBookForm(); return; }
     if (name === 'edit-book') { const b = state.selected.book; $('#detail-dialog').close(); openBookForm(b); return; }
     if (name === 'delete-book') { const b = state.selected.book; if (!await confirmAction(`Remove “${b.title}” and all its reading history?`)) return; try { await library.remove(b.id); $('#detail-dialog').close(); await refresh(); notify('Book removed'); } catch(e) { notify(e.message,true); } return; }
-    if (name === 'start') { try { await library.start(state.selected.book.id, $('#unit-select').value); state.selected = await library.get(state.selected.book.id); renderDetail(); await refresh(); notify('Reading started'); } catch(e) { notify(e.message,true); } return; }
+    if (name === 'start') { try { if (!state.selected.book.page_count) { requestPageCount(state.selected.book, true); return; } await library.start(state.selected.book.id, 'pages'); state.selected = await library.get(state.selected.book.id); renderDetail(); await refresh(); notify('Reading started'); } catch(e) { notify(e.message,true); } return; }
     if (name === 'correct-progress') {
       const {reading, progress} = state.selected.readings[0];
-      const total = reading.unit === 'percent' ? 100 : state.selected.book.page_count;
-      openProgress((reading.status === 'completed' ? progress.find(entry => entry.value === total) : progress[0]) || null);
+      const total = state.selected.book.page_count;
+      const entry = (reading.status === 'completed' ? progress.find(entry => entry.value === total) : progress[0]);
+      if (entry) editHistoryEntry(entry); else openProgress();
       return;
     }
     if (name === 'progress') { openProgress(); return; }
@@ -646,7 +709,34 @@ document.addEventListener('change', async event => {
 });
 document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.book-row')) { e.preventDefault(); e.target.click(); } });
 $('#book-form').addEventListener('submit', async e => { e.preventDefault(); const payload = bookPayload(e.currentTarget); try { const b = await (state.bookEdit ? library.update(state.bookEdit.id, payload) : library.create(payload)); $('#book-dialog').close(); await refresh(); notify('Book saved'); openDetail(b.id); } catch(err) { notify(err.message,true); } });
-$('#page-count-form').addEventListener('submit', e => { e.preventDefault(); if (!state.pendingEdition) return; const count = Number(e.currentTarget.elements.page_count.value); if (!Number.isInteger(count) || count < 1) return; createImportedBook({...state.pendingEdition, page_count: count}); });
+$('#page-count-dialog').addEventListener('close', () => {
+  const pending = state.pendingPageBook;
+  state.pendingPageBook = null;
+  if (pending?.returnToDetail) openDialog($('#detail-dialog'));
+});
+$('#detail-dialog').addEventListener('cancel', event => {
+  const cancelHistory = $('[data-cancel-history]', event.currentTarget);
+  if (cancelHistory) { event.preventDefault(); cancelHistory.click(); }
+});
+$('#page-count-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const count = Number(e.currentTarget.elements.page_count.value);
+  if (!Number.isInteger(count) || count < 1) return;
+  if (!state.pendingPageBook) { if (state.pendingEdition) createImportedBook({...state.pendingEdition, page_count: count}); return; }
+  const pending = state.pendingPageBook;
+  const button = e.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    await library.update(pending.book.id, {...pending.book, page_count: count});
+    if (pending.start) await library.start(pending.book.id, 'pages');
+    state.pendingPageBook = null;
+    $('#page-count-dialog').close();
+    await refresh();
+    if (pending.returnToDetail) await openDetail(pending.book.id);
+    notify(pending.start ? 'Reading started' : 'Pages saved');
+  } catch (error) { notify(error.message, true); }
+  finally { button.disabled = false; }
+});
 $('#skip-pages').addEventListener('click', () => { if (state.pendingEdition) createImportedBook({...state.pendingEdition, page_count: null}); });
 $('#progress-form').addEventListener('submit', async e => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); const payload = {value:Number(data.value),note:data.note,recorded_at:data.recorded_at}; const rid = state.progressEdit?.reading_id ?? state.selected.readings[0].reading.id; try { await (state.progressEdit ? library.editProgress(state.progressEdit.id, payload) : library.addProgress(rid, payload)); $('#progress-dialog').close(); state.selected = await library.get(state.selected.book.id); await refresh(); renderDetail(); openDialog($('#detail-dialog')); notify('Progress saved'); } catch(err) { notify(err.message,true); } });
 $('#library-search').addEventListener('input',renderLibrary); $('#library-sort').addEventListener('change',renderLibrary);

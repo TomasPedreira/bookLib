@@ -308,11 +308,11 @@ pub async fn delete_book(s: &AppState, id: i64) -> ServiceResult<Value> {
 }
 pub async fn start_reading(s: &AppState, id: i64, input: StartReading) -> ServiceResult<Reading> {
     let b = book(&s.db, id).await?;
-    if !["pages", "percent"].contains(&input.unit.as_str()) {
+    if input.unit != "pages" {
         return Err(bad("Unidade inválida"));
     }
-    if input.unit == "pages" && b.page_count.is_none() {
-        return Err(bad("Indica o número de páginas ou usa percentagem"));
+    if b.page_count.is_none() {
+        return Err(bad("Indica o número de páginas"));
     }
     let latest = sqlx::query_as::<_, Reading>(
         "SELECT * FROM readings WHERE book_id=? ORDER BY id DESC LIMIT 1",
@@ -338,6 +338,11 @@ pub async fn start_reading(s: &AppState, id: i64, input: StartReading) -> Servic
     Ok(reading(&s.db, rid).await?)
 }
 async fn complete_finished_progress(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<(), sqlx::Error> {
+    for statement in include_str!("../migrations/20261003010000_pages_only.sql").split(';') {
+        if !statement.trim().is_empty() {
+            sqlx::query(statement).execute(&mut **tx).await?;
+        }
+    }
     sqlx::query("INSERT INTO progress_entries (reading_id,value,recorded_at)
         SELECT r.id, CASE WHEN r.unit='percent' THEN 100 ELSE b.page_count END,
             max(COALESCE(r.finished_at,date('now')), COALESCE((SELECT max(substr(recorded_at,1,10)) FROM progress_entries WHERE reading_id=r.id),'0001-01-01'))
@@ -401,11 +406,8 @@ pub async fn change_reading(s: &AppState, id: i64, input: ReadingStatus) -> Serv
 
 async fn validate_progress(db: &SqlitePool, id: i64, value: i64) -> Result<Reading, AppError> {
     let r = reading(db, id).await?;
-    let max = if r.unit == "percent" {
-        100
-    } else {
-        book(db, r.book_id).await?.page_count.unwrap_or(0)
-    };
+    if r.unit != "pages" { return Err(bad("Indica o número de páginas")); }
+    let max = book(db, r.book_id).await?.page_count.unwrap_or(0);
     if value < 0 || value > max {
         return Err(bad(format!("Indica um valor entre 0 e {max}")));
     }
@@ -722,6 +724,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn legacy_units_convert_to_pages_only_with_a_known_total() {
+        let s = test_state().await;
+        let b = create_book(&s, book_input(None)).await.unwrap();
+        assert!(start_reading(&s, b.id, StartReading { unit: "pages".into() }).await.is_err());
+        assert!(start_reading(&s, b.id, StartReading { unit: "percent".into() }).await.is_err());
+        let id = sqlx::query("INSERT INTO readings (book_id,status,unit,current_value) VALUES (?,'paused','percent',50)")
+            .bind(b.id).execute(&s.db).await.unwrap().last_insert_rowid();
+        sqlx::query("INSERT INTO progress_entries (reading_id,value,note,recorded_at) VALUES (?,50,'Preserve me','2026-09-15')")
+            .bind(id).execute(&s.db).await.unwrap();
+        let data = export_data(&s).await.unwrap();
+        import_data(&s, serde_json::from_value(data).unwrap()).await.unwrap();
+        assert_eq!(reading(&s.db, id).await.unwrap().unit, "percent");
+        update_book(&s, b.id, book_input(Some(529))).await.unwrap();
+        let r = reading(&s.db, id).await.unwrap();
+        assert_eq!(r.unit, "pages");
+        assert_eq!(r.current_value, 265);
+        assert_eq!(r.status, "paused");
+        let history = get_book(&s, b.id).await.unwrap();
+        assert_eq!(history["readings"][0]["progress"][0]["note"], "Preserve me");
+        assert_eq!(history["readings"][0]["progress"][0]["recorded_at"], "2026-09-15");
+        assert_eq!(stats(&s).await.unwrap()["pages_read"], 265);
+        let before = export_data(&s).await.unwrap();
+        import_data(&s, serde_json::from_value(before.clone()).unwrap()).await.unwrap();
+        assert_eq!(export_data(&s).await.unwrap(), before);
+    }
+
+    #[tokio::test]
     async fn closed_states_and_progress_can_be_corrected_in_place() {
         let s = test_state().await;
         let b = create_book(&s, book_input(Some(529))).await.unwrap();
@@ -787,7 +816,6 @@ mod tests {
         let s = test_state().await;
         for (status, unit, pages, expected) in [
             ("completed", "pages", Some(12), 12),
-            ("completed", "percent", None, 100),
             ("paused", "pages", Some(12), 5),
             ("abandoned", "pages", Some(12), 5),
         ] {

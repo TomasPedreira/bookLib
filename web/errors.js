@@ -21,7 +21,7 @@ const apiErrorTranslations = {
   'Texto demasiado longo': 'Text is too long',
   'Esta edição já está na biblioteca': 'This edition is already in your library',
   'Unidade inválida': 'Invalid progress unit',
-  'Indica o número de páginas ou usa percentagem': 'Enter a page count or use percentage progress',
+  'Indica o número de páginas': 'Enter the total number of pages in your copy',
   'Já existe uma leitura em curso': 'A reading session is already in progress',
   'Estado inválido': 'Invalid status',
   'Esta leitura já terminou; inicia uma releitura': 'This reading session has ended; start a new one',

@@ -44,6 +44,8 @@ export function installExternalLinks(onError) {
 
 export async function installBackButton(onError) {
   await onBackButtonPress(() => {
+    const cancelHistory = document.querySelector('#detail-dialog[open] [data-cancel-history]');
+    if (cancelHistory) { cancelHistory.click(); return; }
     const dialogs = [...document.querySelectorAll('dialog[open]')];
     if (dialogs.length) {
       dialogs.at(-1).close();
