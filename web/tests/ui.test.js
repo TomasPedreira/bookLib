@@ -45,9 +45,21 @@ test('UI adds a book, records progress, handles back and saves a native backup',
       }
       if (name === 'get_book') return { book: books.find(b => b.id === args.id), readings: sessions.has(args.id) ? [sessions.get(args.id)] : [] };
       if (name === 'start_reading') {
-        const reading = { id: 1, book_id: args.id, unit: args.input.unit, status: 'reading', current_value: 0 };
+        const reading = { id: args.id, book_id: args.id, unit: args.input.unit, status: 'reading', current_value: 0 };
         sessions.set(args.id, { reading, progress: [] });
         books.find(b => b.id === args.id).status = 'reading'; return reading;
+      }
+      if (name === 'update_rating') {
+        const book = books.find(b => b.id === args.id);
+        book.rating = args.input.rating;
+        return book;
+      }
+      if (name === 'change_reading') {
+        const session = [...sessions.values()].find(s => s.reading.id === args.id);
+        const book = books.find(b => b.id === session.reading.book_id);
+        session.reading.status = book.status = args.input.status;
+        if (args.input.status === 'completed') session.reading.current_value = session.reading.unit === 'percent' ? 100 : book.page_count;
+        return session.reading;
       }
       if (name === 'add_progress') {
         const session = [...sessions.values()].find(s => s.reading.id === args.id);
@@ -189,6 +201,25 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     assert.equal(calls.filter(c => c.name === 'start_reading').at(-1).args.input.unit, 'percent');
     assert.equal($('#page-2').nextElementSibling.textContent, '%');
     assert.equal($('#detail-dialog').open, false);
+    $('.reading-book[data-open="1"]').click();
+    await waitFor(() => $('#detail-dialog').open);
+    $('#detail-rating').value = '8';
+    $('#detail-rating').dispatchEvent(new window.Event('change', { bubbles: true }));
+    await waitFor(() => calls.some(c => c.name === 'update_rating') && $('#detail-rating').value === '8');
+    $('[data-status="completed"]').click();
+    await waitFor(() => $('#home-books .book-row[data-open="1"]'));
+    const finishedRow = $('#home-books .book-row[data-open="1"]');
+    assert.equal(finishedRow.querySelector('.page-value').textContent, '200 / 200');
+    assert.equal(finishedRow.querySelector('.row-rating').textContent, '★ 8/10');
+    assert.equal(finishedRow.querySelector('.progress-caption'), null);
+    assert.equal(finishedRow.querySelector('.progress-line').getAttribute('aria-valuenow'), '100');
+    $('#detail-dialog').close();
+    $('.reading-book[data-open="2"]').click();
+    await waitFor(() => $('#detail-dialog').open);
+    $('[data-status="completed"]').click();
+    await waitFor(() => $('#home-books .book-row[data-open="2"]'));
+    assert.equal($('#home-books .book-row[data-open="2"] .page-value').textContent, '100%');
+    assert.equal($('#home-books .book-row[data-open="2"] .row-rating'), null);
     assert.equal(calls.some(c => c.name.includes('/api/')), false);
   } finally { window.close(); }
 });

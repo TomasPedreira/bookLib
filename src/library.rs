@@ -279,6 +279,7 @@ pub async fn update_book(s: &AppState, id: i64, b: BookInput) -> ServiceResult<B
         .bind(b.cover_url).bind(b.page_count).bind(b.language).bind(b.published)
         .bind(b.description.unwrap_or_default()).bind(b.rating).bind(b.review.unwrap_or_default())
         .bind(b.notes.unwrap_or_default()).bind(b.tags.unwrap_or_default()).bind(b.topics.unwrap_or_default()).bind(id).execute(&mut *tx).await?;
+    complete_finished_progress(&mut tx).await?;
     tx.commit().await?;
     Ok(book(&s.db, id).await?)
 }
@@ -336,6 +337,15 @@ pub async fn start_reading(s: &AppState, id: i64, input: StartReading) -> Servic
     tx.commit().await?;
     Ok(reading(&s.db, rid).await?)
 }
+async fn complete_finished_progress(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<(), sqlx::Error> {
+    for statement in include_str!("../migrations/20261003000000_finished_progress.sql").split(';') {
+        if !statement.trim().is_empty() {
+            sqlx::query(statement).execute(&mut **tx).await?;
+        }
+    }
+    Ok(())
+}
+
 pub async fn change_reading(s: &AppState, id: i64, input: ReadingStatus) -> ServiceResult<Reading> {
     let r = reading(&s.db, id).await?;
     if !["reading", "paused", "completed", "abandoned"].contains(&input.status.as_str()) {
@@ -355,6 +365,9 @@ pub async fn change_reading(s: &AppState, id: i64, input: ReadingStatus) -> Serv
     let mut tx = s.db.begin().await?;
     sqlx::query("UPDATE readings SET status=?,finished_at=CASE WHEN ? IN ('completed','abandoned') THEN date('now') ELSE NULL END WHERE id=?")
         .bind(&input.status).bind(&input.status).bind(id).execute(&mut *tx).await?;
+    if input.status == "completed" {
+        complete_finished_progress(&mut tx).await?;
+    }
     sqlx::query("UPDATE books SET status=?,updated_at=datetime('now') WHERE id=?")
         .bind(&input.status)
         .bind(r.book_id)
@@ -442,6 +455,7 @@ async fn recalc(tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>, id: i64) -> Result
         .bind(id)
         .execute(&mut **tx)
         .await?;
+    complete_finished_progress(tx).await?;
     Ok(())
 }
 pub async fn add_progress(s: &AppState, id: i64, input: ProgressInput) -> ServiceResult<Progress> {
@@ -648,6 +662,7 @@ pub async fn import_data(s: &AppState, data: Backup) -> ServiceResult<Value> {
         sqlx::query("INSERT INTO progress_entries (id,reading_id,value,note,recorded_at) VALUES (?,?,?,?,?)")
             .bind(p.id).bind(p.reading_id).bind(p.value).bind(&p.note).bind(&p.recorded_at).execute(&mut *tx).await?;
     }
+    complete_finished_progress(&mut tx).await?;
     tx.commit().await?;
     Ok(json!({"ok": true, "books": data.books.len()}))
 }
@@ -677,6 +692,70 @@ mod tests {
             "title": "Test book", "authors": "", "page_count": page_count
         }))
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn finished_reads_reach_the_total_and_other_statuses_keep_progress() {
+        let s = test_state().await;
+        for (status, unit, pages, expected) in [
+            ("completed", "pages", Some(12), 12),
+            ("completed", "percent", None, 100),
+            ("paused", "pages", Some(12), 5),
+            ("abandoned", "pages", Some(12), 5),
+        ] {
+            let b = create_book(&s, book_input(pages)).await.unwrap();
+            let r = start_reading(&s, b.id, StartReading { unit: unit.into() })
+                .await
+                .unwrap();
+            add_progress(
+                &s,
+                r.id,
+                ProgressInput {
+                    value: 5,
+                    note: None,
+                    recorded_at: None,
+                },
+            )
+            .await
+            .unwrap();
+            let finished = change_reading(
+                &s,
+                r.id,
+                ReadingStatus {
+                    status: status.into(),
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(finished.current_value, expected);
+            assert_eq!(finished.status, status);
+            let detail = get_book(&s, b.id).await.unwrap();
+            assert_eq!(
+                detail["readings"][0]["progress"].as_array().unwrap().len(),
+                if status == "completed" { 2 } else { 1 }
+            );
+        }
+        assert_eq!(stats(&s).await.unwrap()["pages_read"], 22);
+
+        // Old finished backups can contain a partial value. Restoring repairs it.
+        let mut backup = export_data(&s).await.unwrap();
+        backup["readings"][0]["current_value"] = json!(5);
+        backup["progress_entries"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|p| p["value"] != 12);
+        import_data(&s, serde_json::from_value(backup).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(reading(&s.db, 1).await.unwrap().current_value, 12);
+        let repaired = export_data(&s).await.unwrap();
+        sqlx::raw_sql(include_str!(
+            "../migrations/20261003000000_finished_progress.sql"
+        ))
+        .execute(&s.db)
+        .await
+        .unwrap();
+        assert_eq!(export_data(&s).await.unwrap(), repaired);
     }
 
     #[tokio::test]
@@ -714,7 +793,7 @@ mod tests {
         )
         .await
         .unwrap();
-        for count in [None, Some(120)] {
+        for count in [None, Some(120), Some(150)] {
             let error = update_book(&s, b.id, book_input(count))
                 .await
                 .err()
@@ -722,8 +801,8 @@ mod tests {
             assert_eq!(error.0, reqwest::StatusCode::BAD_REQUEST);
             assert_eq!(book(&s.db, b.id).await.unwrap().page_count, Some(300));
         }
-        let _ = update_book(&s, b.id, book_input(Some(150))).await.unwrap();
-        assert_eq!(book(&s.db, b.id).await.unwrap().page_count, Some(150));
+        let _ = update_book(&s, b.id, book_input(Some(350))).await.unwrap();
+        assert_eq!(book(&s.db, b.id).await.unwrap().page_count, Some(350));
         let other = create_book(&s, book_input(Some(200))).await.unwrap();
         let _ = update_book(&s, other.id, book_input(None)).await.unwrap();
     }
