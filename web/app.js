@@ -1,3 +1,4 @@
+import { readingDays } from './history.js';
 import { library, catalog } from './services.js';
 import { state } from './state.js';
 import { topicGroups, popularTopics, topicSearchAliases, languages, topicLabel } from './topics.js';
@@ -355,7 +356,7 @@ function renderDetail() {
     ${book.tags ? `<section class="detail-section"><h3>Tags</h3><p>${escapeHtml(book.tags)}</p></section>` : ''}
     ${book.review ? `<section class="detail-section"><h3>Your review</h3><p>${escapeHtml(book.review)}</p></section>` : ''}
     ${book.notes ? `<section class="detail-section"><h3>Notes</h3><p>${escapeHtml(book.notes)}</p></section>` : ''}
-    ${readings.length ? `<details class="detail-section reading-history"><summary>Reading history</summary>${readings.map(({reading, progress}, index) => `<section class="reading-history-session"><div class="reading-history-head"><strong>${labels[reading.status]}</strong><span>${escapeHtml(reading.started_at)}${reading.finished_at ? ` → ${escapeHtml(reading.finished_at)}` : ''}</span></div>${progress.map(entry => `<div class="reading-history-entry" data-history-entry="${entry.id}"><span>${escapeHtml(entry.recorded_at.slice(0,10))}</span><span>${reading.unit === 'pages' ? `${entry.value} / ${book.page_count || '?'}` : 'Set total pages'}</span><button type="button" class="secondary-button" data-edit-progress="${entry.id}" aria-label="Edit progress on ${escapeHtml(entry.recorded_at.slice(0,10))}">Edit</button></div>`).join('')}${index === 0 ? `<label class="reading-status-edit">Status<select data-edit-reading-status="${reading.id}" aria-label="Reading status">${['reading','paused','completed','abandoned'].map(status => `<option value="${status}"${reading.status === status ? ' selected' : ''}>${labels[status]}</option>`).join('')}</select></label><button type="button" class="secondary-button danger" data-remove-reading="${reading.id}">Remove this reading</button>` : ''}</section>`).join('')}</details>` : ''}`;
+    ${readings.length ? `<details class="detail-section reading-history"><summary>Reading history</summary>${readings.map(({reading, progress}, index) => `<section class="reading-history-session"><div class="reading-history-head"><strong>${labels[reading.status]}</strong><span>${escapeHtml(reading.started_at)}${reading.finished_at ? ` → ${escapeHtml(reading.finished_at)}` : ''}</span></div>${readingDays(progress).map(entry => `<div class="reading-history-entry" data-history-entry="${entry.id}"><span>${escapeHtml(entry.recorded_at.slice(0,10))}</span><span class="history-day-position">${reading.unit === 'pages' ? `<strong>${entry.value} / ${book.page_count || '?'}</strong><small>${entry.pages} pages read</small>` : 'Set total pages'}</span><button type="button" class="secondary-button" data-edit-progress="${entry.id}" aria-label="Edit progress on ${escapeHtml(entry.recorded_at.slice(0,10))}">Edit</button></div>`).join('')}${index === 0 ? `<label class="reading-status-edit">Status<select data-edit-reading-status="${reading.id}" aria-label="Reading status">${['reading','paused','completed','abandoned'].map(status => `<option value="${status}"${reading.status === status ? ' selected' : ''}>${labels[status]}</option>`).join('')}</select></label><button type="button" class="secondary-button danger" data-remove-reading="${reading.id}">Remove this reading</button>` : ''}</section>`).join('')}</details>` : ''}`;
   if (keepHistory && $('.reading-history', content)) $('.reading-history', content).open = true;
   if (draft) { const entry = readings.flatMap(session => session.progress).find(entry => entry.id === draft.id); if (entry) editHistoryEntry(entry, draft.fields); }
   content.scrollTop = keepScroll;
@@ -374,12 +375,13 @@ function requestPageCount(book, start = false) {
 function editHistoryEntry(entry, draft = null) {
   if ($('[data-save-history]') && !draft) return;
   const session = state.selected.readings.find(session => session.progress.some(p => p.id === entry.id));
+  entry = readingDays(session.progress).find(day => day.day === entry.recorded_at.slice(0,10));
   if (!state.selected.book.page_count || session.reading.unit !== 'pages') { requestPageCount(state.selected.book); return; }
   const history = $('.reading-history');
   history.open = true;
   const row = $(`[data-history-entry="${entry.id}"]`);
   const values = draft || entry;
-  row.innerHTML = `<form class="history-edit-form" data-save-history="${entry.id}"><div class="form-grid"><label>Page<input name="value" type="number" inputmode="numeric" min="0" max="${state.selected.book.page_count}" value="${escapeHtml(values.value)}" required></label><label>Date<input name="recorded_at" type="date" value="${escapeHtml(values.recorded_at.slice(0,10))}" required></label><label class="wide">Note<textarea name="note" rows="2">${escapeHtml(values.note)}</textarea></label></div><div class="history-edit-actions"><button type="button" class="secondary-button" data-cancel-history>Cancel</button><button type="submit" class="primary-button">Save</button></div></form>`;
+  row.innerHTML = `<form class="history-edit-form" data-save-history="${entry.id}"><div class="form-grid"><label>Page at end of day<input name="value" type="number" inputmode="numeric" min="0" max="${state.selected.book.page_count}" value="${escapeHtml(values.value)}" required></label><label>Date<input name="recorded_at" type="date" value="${escapeHtml(values.recorded_at.slice(0,10))}" required></label><label class="wide">Note<textarea name="note" rows="2">${escapeHtml(values.note)}</textarea></label></div><div class="history-edit-actions"><button type="button" class="secondary-button" data-cancel-history>Cancel</button><button type="submit" class="primary-button">Save</button></div></form>`;
   $$('[data-edit-progress]', history).forEach(button => button.disabled = true);
 }
 document.addEventListener('submit', async event => {
@@ -392,13 +394,13 @@ document.addEventListener('submit', async event => {
   const buttons = $$('button', form);
   buttons.forEach(button => button.disabled = true);
   try {
-    await library.editProgress(Number(form.dataset.saveHistory), {value: Number(fields.value), recorded_at: fields.recorded_at, note: fields.note});
+    await library.editDay(Number(form.dataset.saveHistory), {value: Number(fields.value), recorded_at: fields.recorded_at, note: fields.note});
     state.selected = await library.get(bookId);
     form.remove();
     renderDetail();
     $('#detail-content').scrollTop = scroll;
     await refresh();
-    notify('Progress saved');
+    notify('Day updated');
   } catch (error) { buttons.forEach(button => button.disabled = false); notify(error.message, true); }
 });
 

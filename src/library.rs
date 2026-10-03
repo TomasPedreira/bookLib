@@ -537,6 +537,34 @@ pub async fn edit_progress(s: &AppState, id: i64, input: ProgressInput) -> Servi
     tx.commit().await?;
     Ok(progress(&s.db, id).await?)
 }
+pub async fn edit_progress_day(s: &AppState, id: i64, input: ProgressInput) -> ServiceResult<Progress> {
+    let p = progress(&s.db, id).await?;
+    let r = validate_progress(&s.db, p.reading_id, input.value).await?;
+    if input.note.as_deref().is_some_and(|note| note.len() > 10_000) {
+        return Err(bad("Texto demasiado longo"));
+    }
+    let old_day = &p.recorded_at[..10];
+    let day = valid_date(input.recorded_at)?.unwrap_or_else(|| old_day.to_owned());
+    let total = book(&s.db, r.book_id).await?.page_count.unwrap_or(0);
+    let mut tx = s.db.begin().await?;
+    if day != old_day {
+        let exists: i64 = sqlx::query_scalar("SELECT count(*) FROM progress_entries WHERE reading_id=? AND substr(recorded_at,1,10)=?")
+            .bind(r.id).bind(&day).fetch_one(&mut *tx).await?;
+        if exists > 0 { return Err(bad("Já existe um registo nesse dia")); }
+    }
+    // Change every snapshot belonging to this day so that moving or editing
+    // its final position cannot uncover an older snapshot as another day.
+    sqlx::query("UPDATE progress_entries SET value=?,recorded_at=?,note=CASE WHEN id=? THEN ? ELSE note END WHERE reading_id=? AND substr(recorded_at,1,10)=?")
+        .bind(input.value).bind(&day).bind(id).bind(input.note.unwrap_or_default()).bind(r.id).bind(old_day)
+        .execute(&mut *tx).await?;
+    if r.status == "completed" && input.value == total {
+        sqlx::query("UPDATE readings SET finished_at=? WHERE id=?").bind(&day).bind(r.id).execute(&mut *tx).await?;
+    }
+    recalc(&mut tx, r.id).await?;
+    tx.commit().await?;
+    Ok(progress(&s.db, id).await?)
+}
+
 pub async fn delete_progress(s: &AppState, id: i64) -> ServiceResult<Value> {
     let p = progress(&s.db, id).await?;
     let mut tx = s.db.begin().await?;
@@ -721,6 +749,30 @@ mod tests {
             "title": "Test book", "authors": "", "page_count": page_count
         }))
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn editing_a_day_updates_its_snapshots_and_recalculates_daily_pages() {
+        let s = test_state().await;
+        let b = create_book(&s, book_input(Some(200))).await.unwrap();
+        let r = start_reading(&s, b.id, StartReading { unit: "pages".into() }).await.unwrap();
+        let first = add_progress(&s, r.id, ProgressInput { value: 20, note: Some("Keep this note".into()), recorded_at: Some("2026-10-01".into()) }).await.unwrap();
+        let last = add_progress(&s, r.id, ProgressInput { value: 30, note: None, recorded_at: Some("2026-10-01".into()) }).await.unwrap();
+        let next = add_progress(&s, r.id, ProgressInput { value: 50, note: None, recorded_at: Some("2026-10-02".into()) }).await.unwrap();
+        edit_progress_day(&s, last.id, ProgressInput { value: 25, note: None, recorded_at: Some("2026-10-01".into()) }).await.unwrap();
+        assert_eq!(progress(&s.db, first.id).await.unwrap().note, "Keep this note");
+        assert_eq!(progress(&s.db, first.id).await.unwrap().value, 25);
+        assert_eq!(stats(&s).await.unwrap()["daily_pages"], json!([
+            {"date":"2026-10-01","pages":25}, {"date":"2026-10-02","pages":25}
+        ]));
+        edit_progress_day(&s, next.id, ProgressInput { value: 60, note: None, recorded_at: Some("2026-10-02".into()) }).await.unwrap();
+        assert_eq!(reading(&s.db, r.id).await.unwrap().current_value, 60);
+        assert_eq!(stats(&s).await.unwrap()["pages_read"], 60);
+        edit_progress_day(&s, last.id, ProgressInput { value: 25, note: None, recorded_at: Some("2026-09-30".into()) }).await.unwrap();
+        assert_eq!(progress(&s.db, first.id).await.unwrap().recorded_at, "2026-09-30");
+        let before = export_data(&s).await.unwrap();
+        assert!(edit_progress_day(&s, last.id, ProgressInput { value: 35, note: None, recorded_at: Some("2026-10-02".into()) }).await.is_err());
+        assert_eq!(export_data(&s).await.unwrap(), before);
     }
 
     #[tokio::test]

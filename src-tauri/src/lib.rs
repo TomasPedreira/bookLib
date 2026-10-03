@@ -85,6 +85,11 @@ async fn edit_progress(
 }
 
 #[tauri::command]
+async fn edit_progress_day(state: State<'_, AppState>, id: i64, input: library::ProgressInput) -> ServiceResult<library::Progress> {
+    library::edit_progress_day(state.inner(), id, input).await
+}
+
+#[tauri::command]
 async fn delete_progress(state: State<'_, AppState>, id: i64) -> ServiceResult<Value> {
     library::delete_progress(state.inner(), id).await
 }
@@ -167,6 +172,7 @@ pub fn run() {
             delete_reading,
             add_progress,
             edit_progress,
+            edit_progress_day,
             delete_progress,
             stats,
             export_data,

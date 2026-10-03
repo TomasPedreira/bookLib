@@ -72,7 +72,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
         const entry = { id: 1, reading_id: args.id, ...args.input };
         session.progress.push(entry); return entry;
       }
-      if (name === 'edit_progress') {
+      if (name === 'edit_progress' || name === 'edit_progress_day') {
         const session = [...sessions.values()].find(s => s.progress.some(p => p.id === args.id));
         const entry = session.progress.find(p => p.id === args.id);
         Object.assign(entry, args.input);
@@ -252,6 +252,8 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     statusSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
     await waitFor(() => $('[data-edit-reading-status]')?.value === 'abandoned' && !statusSelect.isConnected);
     $('.reading-history').open = true;
+    assert.equal(document.querySelectorAll('.reading-history-entry').length, 1);
+    assert.equal($('.history-day-position small').textContent, '42 pages read');
     $('#detail-content').scrollTop = 120;
     $('[data-edit-progress="1"]').click();
     assert.equal($('#detail-dialog').open, true);
@@ -280,7 +282,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     await waitFor(() => !nextForm.isConnected);
     assert.equal($('[data-save-history]').elements.value.value, '40');
     submit('[data-save-history]');
-    await waitFor(() => $('#detail-dialog').open && calls.some(c => c.name === 'edit_progress'));
+    await waitFor(() => $('#detail-dialog').open && calls.some(c => c.name === 'edit_progress_day'));
     await waitFor(() => $('[data-save-history]') === null);
     assert.equal($('.reading-history').open, true);
     assert.equal($('#detail-content').scrollTop, 120);
@@ -290,6 +292,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     assert.equal(calls.some(c => c.name === 'start_reading' && c.args.input.unit !== 'pages'), false);
     assert.equal(calls.filter(c => c.name === 'start_reading').length, 2);
     assert.equal($('#home-books .book-row[data-open="1"] .page-value').textContent, '40 / 200');
+    assert.equal($('.history-day-position small').textContent, '40 pages read');
     $('[data-remove-reading="1"]').click();
     await waitFor(() => $('[data-start-book="1"]'));
     assert.equal(books[0].rating, 8);

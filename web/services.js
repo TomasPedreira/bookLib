@@ -19,6 +19,7 @@ export function createServices(call) {
       status: (id, status) => command('change_reading', { id, input: { status } }),
       addProgress: (id, input) => command('add_progress', { id, input }),
       editProgress: (id, input) => command('edit_progress', { id, input }),
+      editDay: (id, input) => command('edit_progress_day', { id, input }),
       deleteProgress: id => command('delete_progress', { id }),
       stats: () => command('stats'),
       export: () => command('export_data'),
