@@ -202,25 +202,19 @@ function renderDashboard() {
   const planned = state.books
     .filter(({book}) => book.status === 'want')
     .sort((a, b) => b.book.id - a.book.id);
-  const shelf = state.books
-    .filter(({book}) => !['reading', 'paused', 'want'].includes(book.status))
-    .sort((a, b) => b.book.id - a.book.id);
-  $('.shelf-section').hidden = shelf.length === 0;
-  $('.summary-section').hidden = state.books.length === 0;
   $('#currently-reading').innerHTML = active.length ? active.map(readingCard).join('') : empty('No books in progress', 'Add a book or start reading one already in your library.', '<a class="secondary-button" href="#browse">Browse books</a>');
   $('#planned-books').innerHTML = planned.length ? planned.map(plannedCard).join('') : empty('No books planned yet', 'Find a book to read next.', '<a class="secondary-button" href="#browse">Browse books</a>');
-  $('#home-books').innerHTML = shelf.map(bookRow).join('');
 }
 function plannedCard({book}) {
   return `<article class="planned-card" data-open="${book.id}"><button class="planned-main" type="button" aria-label="Open details for ${escapeHtml(book.title)}">${coverHtml(book, 'planned-cover')}<span class="planned-info"><strong>${escapeHtml(book.title)}</strong><span>${escapeHtml(book.authors || 'Unknown author')}</span></span></button><div class="planned-actions"><button class="planned-start" type="button" data-start-book="${book.id}">Start reading</button><form class="planned-buy-form" action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(book.title)}"><input type="hidden" name="i" value="stripbooks"><button class="planned-buy" type="submit" aria-label="Search prices for ${escapeHtml(book.title)} on Amazon">Prices</button></form></div></article>`;
 }
 function readingCard({book, reading}) {
   const max = book.page_count;
-  if (!book.page_count || reading.unit !== 'pages') return `<article class="reading-card"><button class="reading-book" type="button" data-open="${book.id}">${coverHtml(book, 'reading-cover')}<strong>${escapeHtml(book.title)}</strong></button><div class="reading-page"><button class="primary-button" data-set-pages="${book.id}">Set total pages</button></div></article>`;
+  if (!book.page_count || reading.unit !== 'pages') return `<article class="reading-card needs-pages"><button class="reading-book" type="button" data-open="${book.id}">${coverHtml(book, 'reading-cover')}<strong>${escapeHtml(book.title)}</strong><span class="reading-author">${escapeHtml(book.authors || 'Unknown author')}</span></button><div class="reading-page"><button class="primary-button" data-set-pages="${book.id}">Set total pages</button></div></article>`;
   const unit = 'page';
   const digits = Math.max(String(max || 0).length, String(reading.current_value).length, 2);
   const numberUnits = digits * 1.2 + 0.6;
-  return `<article class="reading-card"><button class="reading-book" type="button" data-open="${book.id}" aria-label="Open details for ${escapeHtml(book.title)}">${coverHtml(book, 'reading-cover')}<strong>${escapeHtml(book.title)}</strong><span class="reading-author">${escapeHtml(book.authors || 'Unknown author')}</span></button><div class="reading-page"><label for="page-${book.id}">Page</label><div class="page-controls"><div class="page-number" style="--page-number-units:${numberUnits}"><input id="page-${book.id}" data-page-input="${book.id}" type="number" inputmode="numeric" min="0" max="${max}" value="${reading.current_value}" aria-label="Current page for ${escapeHtml(book.title)}"><span class="page-separator" aria-hidden="true">/</span><span class="page-total" aria-label="Total pages">${max || '—'}</span></div><div class="step-buttons"><button type="button" data-step="1" data-book="${book.id}" aria-label="Increase ${unit} for ${escapeHtml(book.title)}" ${reading.current_value >= max ? 'disabled' : ''}>+</button><button type="button" data-step="-1" data-book="${book.id}" aria-label="Decrease ${unit} for ${escapeHtml(book.title)}" ${reading.current_value <= 0 ? 'disabled' : ''}>−</button></div></div><div class="progress-line" role="progressbar" aria-valuenow="${progressPct(book, reading)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${progressPct(book, reading)}%"></span></div></div></article>`;
+  return `<article class="reading-card"><button class="reading-book" type="button" data-open="${book.id}" aria-label="Open details for ${escapeHtml(book.title)}">${coverHtml(book, 'reading-cover')}<strong>${escapeHtml(book.title)}</strong><span class="reading-author">${escapeHtml(book.authors || 'Unknown author')}</span></button><div class="reading-page"><div class="page-controls"><div class="page-number" style="--page-number-units:${numberUnits}"><input id="page-${book.id}" data-page-input="${book.id}" type="number" inputmode="numeric" min="0" max="${max}" value="${reading.current_value}" aria-label="Current page for ${escapeHtml(book.title)}"><span class="page-separator" aria-hidden="true">/</span><span class="page-total" aria-label="Total pages">${max || '—'}</span></div><div class="step-buttons"><button type="button" data-step="1" data-book="${book.id}" aria-label="Increase ${unit} for ${escapeHtml(book.title)}" ${reading.current_value >= max ? 'disabled' : ''}>+</button><button type="button" data-step="-1" data-book="${book.id}" aria-label="Decrease ${unit} for ${escapeHtml(book.title)}" ${reading.current_value <= 0 ? 'disabled' : ''}>−</button></div></div><div class="progress-line" role="progressbar" aria-valuenow="${progressPct(book, reading)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${progressPct(book, reading)}%"></span></div></div></article>`;
 }
 async function saveInlineProgress(bookId, value) {
   const item = state.books.find(({book}) => book.id === bookId);
@@ -255,9 +249,14 @@ function navigate() {
   const previousView = state.view;
   let view = location.hash.slice(1) || 'inicio';
   if (view === 'descobrir') { history.replaceState(null, '', '#browse'); view = 'browse'; }
-  state.view = ['inicio','biblioteca','browse'].includes(view) ? view : 'inicio';
+  state.view = ['inicio','biblioteca','stats','browse'].includes(view) ? view : 'inicio';
   $$('.view').forEach(el => el.hidden = el.id !== `view-${state.view}`);
-  $$('[data-nav]').forEach(el => el.classList.toggle('active', el.dataset.nav === state.view || (state.view === 'biblioteca' && el.dataset.nav === 'inicio')));
+  $$('[data-nav]').forEach(el => {
+    const active = el.dataset.nav === state.view;
+    el.classList.toggle('active', active);
+    if (active) el.setAttribute('aria-current', 'page'); else el.removeAttribute('aria-current');
+  });
+  $('#page-title').textContent = {inicio:'Reading',biblioteca:'Library',stats:'Stats',browse:'Browse'}[state.view];
   if (state.view === 'browse' && previousView !== 'browse') showBrowseResults();
   window.scrollTo({top:0,behavior:'instant'});
   if (state.view === 'browse' && !state.browseLoaded) loadRecommendations();
@@ -347,14 +346,16 @@ function renderDetail() {
   const ratingOptions = ['<option value="">No rating</option>', ...Array.from({length:10}, (_, i) => `<option value="${i + 1}"${book.rating === i + 1 ? ' selected' : ''}>${i + 1} / 10</option>`)].join('');
   $('#detail-content').innerHTML = `
     <div class="detail-top">${coverHtml(book, 'detail-cover')}<div class="detail-info">
-      <div class="detail-title-row"><h2>${escapeHtml(book.title)}</h2><div class="detail-title-actions"><button class="detail-icon-button" type="button" data-action="edit-book" aria-label="Edit ${escapeHtml(book.title)}" title="Edit book">${pencil}</button><button class="detail-icon-button danger" type="button" data-action="delete-book" aria-label="Remove ${escapeHtml(book.title)}" title="Remove book">${bin}</button></div></div>
+      <div class="detail-title-row"><h2>${escapeHtml(book.title)}</h2></div>
       <p>${escapeHtml(book.authors || 'Unknown author')}</p><p>${metadata}</p>
       ${book.topics ? `<p class="detail-topics">${escapeHtml(book.topics.split(',').map(topicLabel).join(', '))}</p>` : ''}
+      <div class="detail-title-actions"><button class="detail-icon-button" type="button" data-action="edit-book" aria-label="Edit ${escapeHtml(book.title)}" title="Edit book">${pencil}</button><button class="detail-icon-button danger" type="button" data-action="delete-book" aria-label="Remove ${escapeHtml(book.title)}" title="Remove book">${bin}</button></div>
+    </div></div><div class="detail-controls">
       <label class="detail-rating">Your rating <select id="detail-rating" aria-label="Your rating from 1 to 10">${ratingOptions}</select></label>
-      ${latest ? `<div class="progress-line"><span style="width:${progressPct(book,latest)}%"></span></div><p>${readingText(book, latest)}</p>` : ''}
+      ${latest ? `<div class="detail-progress-heading"><h3>Progress</h3><span>${readingText(book, latest)}</span></div><div class="progress-line"><span style="width:${progressPct(book,latest)}%"></span></div>` : ''}
       ${latest ? `<label class="reading-status-edit detail-status">Status<select data-edit-reading-status="${latest.id}" aria-label="Reading status">${['reading','paused','completed','abandoned'].map(status => `<option value="${status}"${latest.status === status ? ' selected' : ''}>${labels[status]}</option>`).join('')}</select></label>` : ''}
-      <div class="detail-actions">${progressControls}</div>
-    </div></div>
+      <div class="detail-actions">${progressControls}${!latest ? `<form class="detail-prices" action="https://www.amazon.es/s" method="get" target="_blank" rel="noopener noreferrer"><input type="hidden" name="k" value="${escapeHtml(book.title)}"><input type="hidden" name="i" value="stripbooks"><button class="secondary-button" type="submit">Prices</button></form>` : ''}</div>
+    </div>
     ${book.description ? `<section class="detail-section"><h3>About this book</h3><p>${escapeHtml(book.description)}</p></section>` : ''}
     ${book.tags ? `<section class="detail-section"><h3>Tags</h3><p>${escapeHtml(book.tags)}</p></section>` : ''}
     ${book.review ? `<section class="detail-section"><h3>Your review</h3><p>${escapeHtml(book.review)}</p></section>` : ''}

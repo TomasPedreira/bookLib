@@ -24,7 +24,7 @@ Consulta também os [pré-requisitos oficiais do Tauri](https://v2.tauri.app/sta
 .\scripts\android.ps1 -Mode build
 ```
 
-O script valida o ambiente, instala o target Rust ARM64, inicializa o projeto Android em `src-tauri/gen/android` e gera um APK **debug assinado**, instalável diretamente no telemóvel. O script copia o APK para `artifacts/BookLib-1.2.1-aarch64.apk` (o nome acompanha a versão e o target). Os APKs originais ficam em `src-tauri/gen/android/app/build/outputs/apk/`. Transfere-o para o Android e abre-o para instalar, ou usa `adb install -r CAMINHO_DO_APK` com depuração USB ativa.
+O script valida o ambiente, instala o target Rust ARM64, inicializa o projeto Android em `src-tauri/gen/android` e gera um APK **debug assinado**, instalável diretamente no telemóvel. O script copia o APK para `artifacts/BookLib-1.3.0-aarch64.apk` (o nome acompanha a versão e o target). Os APKs originais ficam em `src-tauri/gen/android/app/build/outputs/apk/`. Transfere-o para o Android e abre-o para instalar, ou usa `adb install -r CAMINHO_DO_APK` com depuração USB ativa.
 
 Se o Windows não permitir ligações simbólicas, o modo build usa automaticamente uma cópia da biblioteca Rust e empacota-a com Gradle, sem alterar as definições do sistema. O APK distribuído não inclui um servidor de desenvolvimento.
 
@@ -40,7 +40,7 @@ Mantém a mesma chave de assinatura nas atualizações. Para este APK debug, gua
 
 ## Dados e backups
 
-Durante esta fase de testes, correções pequenas atualizam o APK da release existente, mantendo a versão. As notas da release indicam o commit e o checksum do APK mais recente.
+Cada APK publicado tem uma nova versão e uma nova release. Os APKs de releases anteriores não são substituídos. As notas da release indicam o commit e o checksum do APK.
 
 Em **My data**, exporta ou restaura um JSON usando o seletor de documentos do Android. Restaurar substitui a biblioteca atual numa transação; uma importação inválida preserva os dados existentes. São aceites as versões 1 e 2 dos backups anteriores.
 
