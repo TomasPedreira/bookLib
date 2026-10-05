@@ -24,7 +24,7 @@ Consulta também os [pré-requisitos oficiais do Tauri](https://v2.tauri.app/sta
 .\scripts\android.ps1 -Mode build
 ```
 
-O script valida o ambiente, instala o target Rust ARM64, inicializa o projeto Android em `src-tauri/gen/android` e gera um APK **debug assinado**, instalável diretamente no telemóvel. O script copia o APK para `artifacts/BookLib-1.2.0-aarch64.apk` (o nome acompanha a versão e o target). Os APKs originais ficam em `src-tauri/gen/android/app/build/outputs/apk/`. Transfere-o para o Android e abre-o para instalar, ou usa `adb install -r CAMINHO_DO_APK` com depuração USB ativa.
+O script valida o ambiente, instala o target Rust ARM64, inicializa o projeto Android em `src-tauri/gen/android` e gera um APK **debug assinado**, instalável diretamente no telemóvel. O script copia o APK para `artifacts/BookLib-1.2.1-aarch64.apk` (o nome acompanha a versão e o target). Os APKs originais ficam em `src-tauri/gen/android/app/build/outputs/apk/`. Transfere-o para o Android e abre-o para instalar, ou usa `adb install -r CAMINHO_DO_APK` com depuração USB ativa.
 
 Se o Windows não permitir ligações simbólicas, o modo build usa automaticamente uma cópia da biblioteca Rust e empacota-a com Gradle, sem alterar as definições do sistema. O APK distribuído não inclui um servidor de desenvolvimento.
 
