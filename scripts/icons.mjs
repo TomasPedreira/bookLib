@@ -18,6 +18,25 @@ if (result.status !== 0) process.exit(result.status ?? 1);
 // Keep the reusable icon assets in sync with those packaged by Android.
 const android = join(root, 'src-tauri/gen/android/app/src/main/res');
 const assets = join(root, 'src-tauri/icons/android');
+// The foreground bitmap fills its 108dp canvas. Keep the book inside the
+// adaptive icon safe area so launcher masks cannot crop its cover or pages.
+const adaptiveIcon = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <background android:drawable="@mipmap/ic_launcher_background"/>
+  <foreground>
+    <inset android:drawable="@mipmap/ic_launcher_foreground"
+      android:insetLeft="18%" android:insetTop="18%"
+      android:insetRight="18%" android:insetBottom="18%"/>
+  </foreground>
+</adaptive-icon>
+`;
+for (const resources of existsSync(android) ? [android, assets] : [assets]) {
+  const adaptiveDirectory = join(resources, 'mipmap-anydpi-v26');
+  mkdirSync(adaptiveDirectory, { recursive: true });
+  for (const name of ['ic_launcher.xml', 'ic_launcher_round.xml']) {
+    writeFileSync(join(adaptiveDirectory, name), adaptiveIcon);
+  }
+}
 if (existsSync(android)) {
   for (const directory of readdirSync(android).filter(name => name.startsWith('mipmap-'))) {
     const destination = join(assets, directory);
