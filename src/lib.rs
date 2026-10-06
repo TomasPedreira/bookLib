@@ -1,15 +1,14 @@
 pub mod catalog;
+mod catalog_cache;
 pub mod library;
 
 use reqwest::StatusCode;
 use serde::Serialize;
-use serde_json::Value;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
     SqlitePool,
 };
 use std::{
-    collections::HashMap,
     path::Path,
     sync::Arc,
     time::{Duration, Instant},
@@ -20,10 +19,10 @@ pub struct AppState {
     db: SqlitePool,
     http: reqwest::Client,
     catalog_gate: Arc<tokio::sync::Mutex<Instant>>,
-    catalog_cache: Arc<tokio::sync::Mutex<HashMap<String, (Instant, Value)>>>,
+    catalog_cache: Arc<catalog_cache::CatalogCache>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AppError(StatusCode, String);
 pub type ServiceResult<T> = Result<T, AppError>;
 
@@ -81,7 +80,7 @@ impl AppState {
             catalog_gate: Arc::new(tokio::sync::Mutex::new(
                 Instant::now() - Duration::from_secs(1),
             )),
-            catalog_cache: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            catalog_cache: Arc::new(catalog_cache::CatalogCache::default()),
         })
     }
 }

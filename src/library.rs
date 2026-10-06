@@ -740,7 +740,7 @@ mod tests {
             db,
             http: reqwest::Client::new(),
             catalog_gate: Arc::new(tokio::sync::Mutex::new(Instant::now())),
-            catalog_cache: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            catalog_cache: Arc::new(crate::catalog_cache::CatalogCache::default()),
         }
     }
 

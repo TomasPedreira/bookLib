@@ -1,8 +1,8 @@
+use crate::catalog_cache::fetch;
 use crate::{bad, AppError, AppState, ServiceResult};
 use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::time::{Duration, Instant};
 
 #[derive(Deserialize)]
 pub struct SearchQuery {
@@ -210,70 +210,6 @@ pub async fn work_details(s: &AppState, id: String) -> ServiceResult<Value> {
         .map(|text| text.trim().chars().take(5_000).collect::<String>())
         .filter(|text| !text.is_empty());
     Ok(json!({"description": description, "genres": work_genre_names(&work)}))
-}
-
-async fn fetch(state: &AppState, url: &str, params: &[(&str, &str)]) -> Result<Value, AppError> {
-    const CACHE_TTL: Duration = Duration::from_secs(1_800);
-    const CACHE_LIMIT: usize = 256;
-    let key = format!("{url}{}", serde_json::to_string(params).unwrap_or_default());
-    if let Some((at, value)) = state.catalog_cache.lock().await.get(&key) {
-        if at.elapsed() < CACHE_TTL {
-            return Ok(value.clone());
-        }
-    }
-    {
-        let mut last = state.catalog_gate.lock().await;
-        let wait = Duration::from_secs(1).saturating_sub(last.elapsed());
-        if !wait.is_zero() {
-            tokio::time::sleep(wait).await;
-        }
-        *last = Instant::now();
-    }
-    let response = state
-        .http
-        .get(url)
-        .query(params)
-        .send()
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "catalog request failed");
-            AppError(
-                StatusCode::BAD_GATEWAY,
-                "Catálogo temporariamente indisponível".into(),
-            )
-        })?;
-    if !response.status().is_success() {
-        tracing::warn!(status=%response.status(), "catalog response failed");
-        if response.status() == StatusCode::NOT_FOUND {
-            return Err(AppError(
-                StatusCode::NOT_FOUND,
-                "Edição não encontrada no catálogo".into(),
-            ));
-        }
-        return Err(AppError(
-            StatusCode::BAD_GATEWAY,
-            "O catálogo não respondeu à pesquisa".into(),
-        ));
-    }
-    let value = response.json::<Value>().await.map_err(|_| {
-        AppError(
-            StatusCode::BAD_GATEWAY,
-            "Resposta inválida do catálogo".into(),
-        )
-    })?;
-    let mut cache = state.catalog_cache.lock().await;
-    cache.retain(|_, (at, _)| at.elapsed() < CACHE_TTL);
-    if cache.len() >= CACHE_LIMIT {
-        if let Some(oldest) = cache
-            .iter()
-            .min_by_key(|(_, (at, _))| *at)
-            .map(|(key, _)| key.clone())
-        {
-            cache.remove(&oldest);
-        }
-    }
-    cache.insert(key, (Instant::now(), value.clone()));
-    Ok(value)
 }
 
 pub async fn search(s: &AppState, query: SearchQuery) -> ServiceResult<Value> {

@@ -2,6 +2,8 @@
 
 App pessoal de biblioteca e acompanhamento de leituras, feita com Tauri 2, Rust e HTML/CSS/JavaScript. Os livros, leituras, classificações, notas e progresso ficam em SQLite na pasta privada da app. Não há servidor HTTP, contas ou sincronização. Pesquisa no catálogo e capas usam a Open Library; a biblioteca local funciona sem internet.
 
+As respostas do catálogo ficam também em cache SQLite entre sessões: pesquisas e listas de recomendações durante 24 horas; detalhes, temas, ISBNs e edições durante 30 dias. Pedidos simultâneos à mesma resposta partilham um único acesso à API. Se o catálogo estiver indisponível, podem ser usados dados anteriores até 7 dias para pesquisas e 90 dias para metadados. As respostas “não encontrado” ficam guardadas durante 6 horas; falhas temporárias têm uma pausa de 60 segundos antes de tentar novamente. A cache tem limites de 512 respostas e 32 MiB em disco, com até 128 respostas e 8 MiB em memória, e não faz parte dos backups da biblioteca. As capas continuam a usar a cache HTTP do WebView.
+
 ## Preparar o Android no Windows
 
 1. Instala Node.js 22.12+ e Rust. `rust-toolchain.toml` seleciona a versão Rust deste projeto.
@@ -24,7 +26,7 @@ Consulta também os [pré-requisitos oficiais do Tauri](https://v2.tauri.app/sta
 .\scripts\android.ps1 -Mode build
 ```
 
-O script valida o ambiente, instala o target Rust ARM64, inicializa o projeto Android em `src-tauri/gen/android` e gera um APK **debug assinado**, instalável diretamente no telemóvel. O script copia o APK para `artifacts/BookLib-1.3.2-aarch64.apk` (o nome acompanha a versão e o target). Os APKs originais ficam em `src-tauri/gen/android/app/build/outputs/apk/`. Transfere-o para o Android e abre-o para instalar, ou usa `adb install -r CAMINHO_DO_APK` com depuração USB ativa.
+O script valida o ambiente, instala o target Rust ARM64, inicializa o projeto Android em `src-tauri/gen/android` e gera um APK **debug assinado**, instalável diretamente no telemóvel. O script copia o APK para `artifacts/BookLib-1.4.0-aarch64.apk` (o nome acompanha a versão e o target). Os APKs originais ficam em `src-tauri/gen/android/app/build/outputs/apk/`. Transfere-o para o Android e abre-o para instalar, ou usa `adb install -r CAMINHO_DO_APK` com depuração USB ativa.
 
 Se o Windows não permitir ligações simbólicas, o modo build usa automaticamente uma cópia da biblioteca Rust e empacota-a com Gradle, sem alterar as definições do sistema. O APK distribuído não inclui um servidor de desenvolvimento.
 
@@ -69,7 +71,8 @@ O último comando verifica o shell Tauri no sistema anfitrião; não substitui a
 
 - `src/lib.rs`: inicialização SQLite, cliente do catálogo e erros serializáveis.
 - `src/library.rs`: operações da biblioteca, leituras, progresso, estatísticas e backups, independentes do transporte.
-- `src/catalog.rs`: integração Open Library, limite de pedidos e cache temporária.
+- `src/catalog.rs`: integração Open Library e recomendações.
+- `src/catalog_cache.rs`: cache persistente, partilha de pedidos simultâneos e limite de pedidos à API.
 - `src-tauri/`: shell da app, comandos nativos e permissões.
 - `web/services.js`: chamadas estruturadas aos comandos Rust.
 - `web/platform.js`: documentos, confirmações, links externos e botão voltar.

@@ -457,9 +457,9 @@ main { width: min(100%, 1120px); padding: 28px 32px 40px; }
 .planned-info span { font-size: 14px; line-height: 1.45; }
 .planned-actions { width: auto; margin: 0; }
 .planned-start { border-radius: 8px; font-size: 14px; font-weight: 500; padding: 11px 16px; }
-.home-recommend-grid { display: grid; grid-auto-flow: column; grid-auto-columns: max(280px, calc((100% - 16px) / 2)); align-items: start; gap: 16px; overflow-x: auto; padding: 0 0 12px; scrollbar-width: thin; }
+.home-recommend-grid { display: grid; grid-auto-flow: column; grid-auto-columns: max(280px, calc((100% - 16px) / 2)); align-items: stretch; gap: 16px; overflow-x: auto; padding: 0 0 12px; scrollbar-width: thin; }
 .home-recommend-card { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
-.home-recommend-main { display: flex; align-items: flex-start; gap: 14px; width: 100%; padding: 16px; border: 0; border-radius: inherit; background: none; color: var(--ink); text-align: left; }
+.home-recommend-main { display: flex; align-items: flex-start; gap: 14px; width: 100%; height: 100%; padding: 16px; border: 0; border-radius: inherit; background: none; color: var(--ink); text-align: left; }
 .home-recommend-main:hover strong { color: var(--accent); }
 .home-recommend-main:focus-visible { outline-offset: -3px; }
 .home-cover { flex: none; width: 76px; height: 110px; overflow: hidden; border-radius: 5px; background: var(--soft); }
@@ -467,6 +467,7 @@ main { width: min(100%, 1120px); padding: 28px 32px 40px; }
 .home-recommend-info { display: grid; gap: 6px; min-width: 0; }
 .home-recommend-info > strong { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 3; font-size: 17px; line-height: 1.3; }
 .home-recommend-info > span, .home-recommend-info > small { color: var(--muted); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.home-recommend-info > span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .home-topics strong { color: var(--ink); font-weight: 700; }
 .bottom-nav { position: fixed; z-index: 20; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); background: #ffffffed; backdrop-filter: blur(16px); border-top: 1px solid var(--line); }
 .bottom-nav a { display: flex; flex-direction: column; align-items: center; gap: 5px; width: min(25%, 150px); min-height: 48px; color: #8b9db3; font-size: 12px; }
