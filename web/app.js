@@ -336,7 +336,7 @@ function renderDetail() {
   const latest = readings[0]?.reading;
   const active = latest && ['reading','paused'].includes(latest.status);
   const progressControls = active
-    ? `<button class="primary-button" data-action="progress">Update progress</button>${latest.status === 'paused' ? '<button class="secondary-button" data-status="reading">Resume</button>' : '<button class="secondary-button" data-status="paused"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>Pause</button>'}<button class="secondary-button" data-status="completed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>Finish</button>`
+    ? `${latest.status === 'paused' ? '<button class="secondary-button" data-status="reading">Resume</button>' : '<button class="secondary-button" data-status="paused"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>Pause</button>'}<button class="secondary-button" data-status="completed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>Finish</button>`
     : latest?.status === 'abandoned'
       ? `<button class="primary-button" data-status="reading">Resume reading</button><button class="secondary-button" data-status="completed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>Finish</button><button class="secondary-button" data-action="correct-progress">Edit progress</button>`
       : `<button class="primary-button" data-action="start">${readings.length ? 'Read again' : 'Start reading'}</button>${latest ? '<button type="button" class="secondary-button" data-status="reading">Reopen reading</button><button type="button" class="secondary-button" data-action="correct-progress">Edit progress</button>' : ''}`;
@@ -345,11 +345,11 @@ function renderDetail() {
   const bin = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 7V4h4v3m4 0-1 13H7L6 7M10 10v7m4-7v7"/></svg>';
   const ratingOptions = ['<option value="">No rating</option>', ...Array.from({length:10}, (_, i) => `<option value="${i + 1}"${book.rating === i + 1 ? ' selected' : ''}>${i + 1} / 10</option>`)].join('');
   $('#detail-content').innerHTML = `
-    <div class="detail-top">${coverHtml(book, 'detail-cover')}<div class="detail-info">
+    <div class="detail-top"><div class="detail-cover-column">${coverHtml(book, 'detail-cover')}<div class="detail-title-actions"><button class="detail-icon-button" type="button" data-action="edit-book" aria-label="Edit ${escapeHtml(book.title)}" title="Edit book">${pencil}</button><button class="detail-icon-button danger" type="button" data-action="delete-book" aria-label="Remove ${escapeHtml(book.title)}" title="Remove book">${bin}</button></div></div><div class="detail-info">
       <div class="detail-title-row"><h2>${escapeHtml(book.title)}</h2></div>
       <p>${escapeHtml(book.authors || 'Unknown author')}</p><p>${metadata}</p>
       ${book.topics ? `<p class="detail-topics">${escapeHtml(book.topics.split(',').map(topicLabel).join(', '))}</p>` : ''}
-      <div class="detail-title-actions"><button class="detail-icon-button" type="button" data-action="edit-book" aria-label="Edit ${escapeHtml(book.title)}" title="Edit book">${pencil}</button><button class="detail-icon-button danger" type="button" data-action="delete-book" aria-label="Remove ${escapeHtml(book.title)}" title="Remove book">${bin}</button></div>
+
     </div></div><div class="detail-controls">
       <label class="detail-rating">Your rating <select id="detail-rating" aria-label="Your rating from 1 to 10">${ratingOptions}</select></label>
       ${latest ? `<div class="detail-progress"><div class="detail-progress-heading"><h3>Progress</h3><span>${readingText(book, latest)}</span></div><div class="progress-line"><span style="width:${progressPct(book,latest)}%"></span></div></div>` : ''}
