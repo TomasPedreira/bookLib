@@ -36,7 +36,11 @@ test('UI adds a book, records progress, handles back and saves a native backup',
       if (name === 'plugin:opener|open_url') return;
       if (name === 'list_books') return books.map(book => ({ book, reading: sessions.get(book.id)?.reading || null }));
       if (name === 'stats') return { total: books.length, want: books.length, reading: 0, paused: 0, completed: 0, abandoned: 0, reading_sessions: 0, pages_read: 0, daily_pages: [] };
-      if (name === 'recommendations' || name === 'search') return { items: [{ work_id: '/works/OL82563W', title: 'Harry Potter and the Philosopher’s Stone', authors: ['J. K. Rowling'], year: 1997, genres: ['fantasy', 'science_fiction'] }] };
+      if (name === 'recommendations' || name === 'search') return { items: [
+        ...(args.query?.mode === 'home' ? [{ work_id:'/works/OL1W', title:'  ', authors:[] }] : []),
+        { work_id: '/works/OL82563W', title: 'Harry Potter and the Philosopher’s Stone', authors: ['J. K. Rowling'], year: 1997, genres: ['fantasy', 'science_fiction'] },
+        ...(args.query?.mode === 'home' ? [{ work_id:'/works/OL2W', title:'X', authors:[], genres:[] }] : []),
+      ] };
       if (name === 'work_details') return { description: 'A long Harry Potter synopsis. '.repeat(300), genres: ['fantasy', 'science_fiction', 'fantasy', 'unknown_topic'] };
       if (name === 'editions') return { total: 30, items: Array.from({ length: 30 }, (_, i) => ({ edition_id: `/books/OL${i}M`, title: `Harry Potter edition ${i}`, language: 'eng', page_count: 300 })) };
       if (name === 'create_book') {
@@ -102,6 +106,8 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     await import('../app.js');
     await waitFor(() => calls.some(c => c.name === 'stats'));
     await waitFor(() => $('#activity-grid').children.length > 0);
+    assert.equal($('#library-count').textContent, '0 books');
+    assert.ok($('#library-books .empty-state'));
     assert.equal($('.summary-section').closest('.view').id, 'view-stats');
     assert.equal($('#view-inicio .summary-section'), null);
     assert.equal($('#view-inicio .book-list'), null);
@@ -127,6 +133,13 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     submit('#book-form');
     await waitFor(() => $('#detail-dialog').open);
     assert.ok($('[data-action="start"]'));
+    assert.deepEqual([...document.querySelectorAll('[data-library-section]')].map(section => section.dataset.librarySection), ['reading', 'paused', 'want', 'completed']);
+    assert.ok($('[data-library-section="want"] .book-row[data-open="1"]'));
+    assert.equal($('[data-library-section="want"] .library-section-count').textContent, '1');
+    assert.equal($('[data-library-section="paused"] .library-section-count').textContent, '0');
+    assert.equal($('[data-library-section="completed"]').open, false);
+    assert.equal($('#library-filters'), null);
+    assert.equal($('#library-books .pill'), null);
     $('#detail-dialog').close();
     const quickStart = $('[data-start-book="1"]');
     assert.ok(quickStart);
@@ -175,9 +188,16 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     await waitFor(() => calls.some(c => c.name === 'plugin:opener|open_url'));
     assert.equal(calls.find(c => c.name === 'plugin:opener|open_url').args.url, 'https://openlibrary.org/');
     await waitFor(() => $('[data-home-recommend]'));
-    assert.equal($('.home-topics').textContent, 'Fantasy, Sci-fi');
+    assert.equal($('.home-topics').textContent, 'Fantasy·Sci-fi');
+    assert.ok($('.home-topics').closest('.home-recommend-footer'));
+    assert.equal($('.home-topics').closest('.home-recommend-info'), null);
+    assert.equal($('.home-recommend-rating').textContent, 'No ratings');
+    assert.equal($('.home-recommend-main').querySelector('[data-prices-work]'), null);
+    assert.equal(document.querySelectorAll('.home-recommend-card').length, 2);
+    assert.equal(document.querySelectorAll('.home-recommend-card')[1].querySelector('.home-recommend-info > strong').textContent, 'X');
+    assert.equal(document.querySelectorAll('.home-recommend-card')[1].querySelector('.home-topics').textContent, 'No topics listed');
     assert.equal($('.home-topics strong'), null);
-    $('[data-home-recommend]').click();
+    $('.home-recommend-footer').click();
     await waitFor(() => $('#browse-dialog-synopsis')?.textContent.startsWith('A long Harry Potter'));
     assert.deepEqual([...window.document.querySelectorAll('.browse-topic')].map(topic => topic.textContent), ['Fantasy', 'Sci-fi']);
     // Long descriptions and edition lists scroll independently of the footer.
@@ -218,7 +238,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     $('[data-nav="inicio"]').click();
     await waitFor(() => $('.home-topics strong'));
     assert.equal($('.home-topics strong').textContent, 'Fantasy');
-    assert.equal($('.home-topics').textContent, 'Fantasy, Sci-fi');
+    assert.equal($('.home-topics').textContent, 'Fantasy·Sci-fi');
     $('[data-home-recommend]').click();
     await waitFor(() => $('#browse-topic-list strong'));
     assert.equal($('#browse-topic-list strong').textContent, 'Fantasy');
@@ -246,7 +266,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     $('#detail-rating').dispatchEvent(new window.Event('change', { bubbles: true }));
     await waitFor(() => calls.some(c => c.name === 'update_rating') && $('#detail-rating').value === '8');
     $('[data-status="completed"]').click();
-    await waitFor(() => $('#library-books .book-row[data-open="1"] .pill.completed'));
+    await waitFor(() => $('[data-library-section="completed"] .book-row[data-open="1"]'));
     assert.equal($('#currently-reading [data-open="1"]'), null);
     location.hash = '#biblioteca';
     window.dispatchEvent(new window.Event('hashchange'));
@@ -262,7 +282,7 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     $('.reading-book[data-open="2"]').click();
     await waitFor(() => $('#detail-dialog').open);
     $('[data-status="completed"]').click();
-    await waitFor(() => $('#library-books .book-row[data-open="2"] .pill.completed'));
+    await waitFor(() => $('[data-library-section="completed"] .book-row[data-open="2"]'));
     assert.equal($('#library-books .book-row[data-open="2"] .page-value').textContent, '300 / 300');
     assert.equal($('#library-books .book-row[data-open="2"] .row-rating'), null);
     $('#detail-dialog').close();
@@ -273,6 +293,37 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     statusSelect.value = 'paused';
     statusSelect.dispatchEvent(new window.Event('change', { bubbles: true }));
     await waitFor(() => $('[data-edit-reading-status]')?.value === 'paused' && !statusSelect.isConnected);
+    await waitFor(() => $('[data-library-section="paused"] .book-row[data-open="1"]'));
+    assert.equal($('#currently-reading [data-open="1"]'), null);
+    assert.equal($('#page-1'), null);
+    assert.ok($('#currently-reading .empty-state'));
+    assert.equal($('[data-library-section="reading"] .library-section-count').textContent, '0');
+    assert.equal($('[data-library-section="paused"] .library-section-count').textContent, '1');
+    assert.equal($('[data-library-section="completed"] .library-section-count').textContent, '1');
+    assert.equal($('[data-library-section="paused"] .page-value').textContent, '200 / 200');
+    assert.equal($('[data-library-section="paused"] [data-progress]'), null);
+    assert.equal($('#library-count').textContent, '2 books');
+    // Searching reveals matches inside folded sections without losing their previous state.
+    $('[data-library-section="paused"]').open = false;
+    $('#library-sort').dispatchEvent(new window.Event('change', { bubbles: true }));
+    assert.equal($('[data-library-section="paused"]').open, false);
+    $('#library-search').value = 'Android';
+    $('#library-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal($('[data-library-section="paused"]').open, true);
+    assert.equal(document.querySelectorAll('[data-library-section]').length, 1);
+    assert.equal($('#library-count').textContent, '1 book');
+    $('#library-search').value = 'no matching title';
+    $('#library-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal($('#library-count').textContent, '0 books');
+    assert.ok($('#library-books .empty-state'));
+    $('#library-search').value = '';
+    $('#library-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal($('[data-library-section="paused"]').open, false);
+    assert.equal($('[data-library-section="completed"]').open, false);
+    $('[data-library-section="paused"]').open = true;
+    $('#detail-dialog').close();
+    $('[data-library-section="paused"] .row-title-button').click();
+    await waitFor(() => $('#detail-dialog').open);
     assert.equal($('[data-edit-reading-status]').closest('.reading-history'), null);
     assert.equal($('.reading-history').open, false);
     assert.equal($('[data-action="start"]'), null);
@@ -280,10 +331,16 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     assert.equal(resume.textContent, 'Resume');
     resume.click();
     await waitFor(() => $('#page-1') && $('[data-edit-reading-status]')?.value === 'reading');
+    assert.ok($('[data-library-section="reading"] .book-row[data-open="1"]'));
+    assert.equal($('[data-library-section="paused"] .book-row'), null);
+    assert.equal($('[data-library-section="reading"] .library-section-count').textContent, '1');
     assert.equal($('#page-1').value, '200');
     assert.equal(calls.filter(c => c.name === 'start_reading').length, 2);
     $('[data-status="paused"]').click();
     await waitFor(() => $('[data-edit-reading-status]')?.value === 'paused');
+    await waitFor(() => $('[data-library-section="paused"] .book-row[data-open="1"]'));
+    assert.equal($('#page-1'), null);
+    assert.equal($('#currently-reading [data-open="1"]'), null);
     $('[data-status="reading"]').click();
     await waitFor(() => $('[data-edit-reading-status]')?.value === 'reading');
     $('[data-status="completed"]').click();
@@ -331,8 +388,43 @@ test('UI adds a book, records progress, handles back and saves a native backup',
     assert.equal(calls.filter(c => c.name === 'start_reading').length, 2);
     assert.equal($('#library-books .book-row[data-open="1"] .page-value').textContent, '40 / 200');
     assert.equal($('.history-day-position small').textContent, '40 pages read');
+    // Include older abandoned books and multiple planned books when regrouping after a refresh.
+    books.push(
+      { ...books[0], id: 3, title: 'Zebra Notes', authors: 'A Author', tags: 'shared', status: 'want' },
+      { ...books[0], id: 4, title: 'A Tale', authors: 'Z Writer', tags: 'shared', status: 'want' },
+      { ...books[0], id: 5, title: 'Older book', authors: 'Past Author', tags: '', status: 'abandoned' },
+    );
     $('[data-remove-reading="1"]').click();
     await waitFor(() => $('[data-start-book="1"]'));
+    assert.equal($('[data-library-section="want"] .library-section-count').textContent, '3');
+    assert.ok($('[data-library-section="want"] .book-row[data-open="1"]'));
+    assert.ok($('[data-library-section="abandoned"] .book-row[data-open="5"]'));
+    assert.equal($('[data-library-section="abandoned"]').open, false);
+    assert.equal($('#library-count').textContent, '5 books');
+    $('#library-search').value = 'shared';
+    $('#library-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal(document.querySelectorAll('[data-library-section]').length, 1);
+    assert.equal($('#library-count').textContent, '2 books');
+    const visibleTitles = () => [...document.querySelectorAll('#library-books .row-title-button')].map(button => button.textContent);
+    assert.deepEqual(visibleTitles(), ['A Tale', 'Zebra Notes']);
+    $('#library-sort').value = 'title';
+    $('#library-sort').dispatchEvent(new window.Event('change', { bubbles: true }));
+    assert.deepEqual(visibleTitles(), ['A Tale', 'Zebra Notes']);
+    $('#library-sort').value = 'author';
+    $('#library-sort').dispatchEvent(new window.Event('change', { bubbles: true }));
+    assert.deepEqual(visibleTitles(), ['Zebra Notes', 'A Tale']);
+    $('#library-search').value = 'Past Author';
+    $('#library-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal($('[data-library-section="abandoned"]').open, true);
+    assert.deepEqual(visibleTitles(), ['Older book']);
+    $('#library-search').value = 'book';
+    $('#library-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.deepEqual([...document.querySelectorAll('[data-library-section]')].map(section => section.dataset.librarySection), ['completed', 'abandoned']);
+    assert.equal($('#library-count').textContent, '2 books');
+    $('#library-search').value = '';
+    $('#library-search').dispatchEvent(new window.Event('input', { bubbles: true }));
+    assert.equal($('[data-library-section="abandoned"]').open, false);
+    assert.equal($('[data-library-section="completed"]').open, false);
     assert.equal(books[0].rating, 8);
     assert.equal($('#detail-dialog').open, true);
     assert.equal($('.reading-history'), null);

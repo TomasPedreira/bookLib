@@ -4,6 +4,7 @@ import { state } from './state.js';
 import { topicGroups, popularTopics, topicSearchAliases, languages, topicLabel } from './topics.js';
 import { confirmAction, saveBackup, loadBackup, installExternalLinks, installBackButton } from './platform.js';
 import { validateBackup } from './backup.js';
+import { hasRecommendationTitle, homeRecommendationCard, fitRecommendationTopics } from './recommendation-cards.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -23,7 +24,7 @@ function languageLabel(value) {
 function dateLabel(value) { if (!value) return ''; const d = new Date(String(value).replace(' ', 'T')); return Number.isNaN(d.getTime()) ? value : new Intl.DateTimeFormat('en-GB', {day:'numeric',month:'short',year:'numeric'}).format(d); }
 function today() { return new Date().toLocaleDateString('sv-SE'); }
 function notify(message, error = false) { const el = $('#toast'); el.textContent = message; el.className = `toast show${error ? ' error' : ''}`; clearTimeout(toastTimer); toastTimer = setTimeout(() => el.className = 'toast', 3500); }
-function coverHtml(book, cls = '') { const src = safeImage(book.cover_url); return `<div class="${cls || 'cover-wrap'}">${src ? `<img src="${src}" alt="Cover of ${escapeHtml(book.title)}" loading="lazy"><span class="cover-fallback" hidden>${escapeHtml(book.title)}</span>` : `<span class="cover-fallback">${escapeHtml(book.title)}</span>`}</div>`; }
+function coverHtml(book, cls = '', fallback = book.title) { const src = safeImage(book.cover_url); return `<div class="${cls || 'cover-wrap'}">${src ? `<img src="${src}" alt="Cover of ${escapeHtml(book.title)}" loading="lazy"><span class="cover-fallback" hidden>${escapeHtml(fallback)}</span>` : `<span class="cover-fallback">${escapeHtml(fallback)}</span>`}</div>`; }
 function progressPct(book, reading) { if (!reading || reading.unit !== 'pages') return 0; const max = book.page_count; return max ? Math.min(100, Math.round(100 * reading.current_value / max)) : 0; }
 function readingText(book, reading) { return reading.unit !== 'pages' ? 'Set total pages to show progress' : `${reading.current_value} / ${book.page_count || '?'} pages`; }
 function empty(title, text, action = '') { return `<div class="empty-state"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p>${action}</div>`; }
@@ -133,9 +134,11 @@ async function loadRecommendations() {
 }
 function renderHomeRecommendations() {
   const owned = new Set(state.books.map(item => item.book.work_id).filter(Boolean));
-  const items = state.homeRecommendations.filter(item => !owned.has(item.work_id)).slice(0, 10);
+  const items = state.homeRecommendations.filter(item => hasRecommendationTitle(item) && !owned.has(item.work_id)).slice(0, 10);
   state.visibleHomeRecommendations = items;
-  $('#home-recommend-books').innerHTML = items.map((item, index) => `<article class="home-recommend-card"><button class="home-recommend-main" type="button" data-home-recommend="${index}" aria-label="Open details for ${escapeHtml(item.title)}">${coverHtml(item, 'home-cover')}<span class="home-recommend-info"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml((item.authors || []).join(', ') || 'Unknown author')}</span><small>${item.ratings_count >= 5 ? `★ ${Number(item.ratings_average).toFixed(1)}` : 'Popular book'}</small><span class="home-topics" aria-label="Book topics">${browseTopicMarkup(catalogTopics(item), state.recommendationGenres).join(', ') || 'No topics listed'}</span></span></button></article>`).join('');
+  const root = $('#home-recommend-books');
+  root.innerHTML = items.map((item, index) => homeRecommendationCard(item, index, state.recommendationGenres, coverHtml(item, 'home-cover', 'No cover'))).join('');
+  fitRecommendationTopics(root);
 }
 async function loadHomeRecommendations() {
   if (!state.booksReady) return;
@@ -197,7 +200,7 @@ function renderDashboard() {
   ].map(([label, value]) => `<div class="stat-card"><span class="stat-label">${label}</span><strong class="stat-number">${value}</strong></div>`).join('');
   renderReadingActivity();
   const active = state.books
-    .filter(({book, reading}) => reading && ['reading', 'paused'].includes(book.status))
+    .filter(({book, reading}) => reading && book.status === 'reading')
     .sort((a, b) => b.reading.id - a.reading.id);
   const planned = state.books
     .filter(({book}) => book.status === 'want')
@@ -231,19 +234,37 @@ async function saveInlineProgress(bookId, value) {
   finally { state.pendingProgress.delete(bookId); }
 }
 function bookRow({book, reading}) {
-  const active = reading && ['reading', 'paused'].includes(book.status);
+  const active = reading && book.status === 'reading';
   const progress = reading ? `<div class="row-progress"><div class="row-progress-head"><strong class="page-value">${reading.unit === 'pages' ? `${reading.current_value} / ${book.page_count || '?'}` : 'Set total pages'}</strong></div><div class="progress-line" role="progressbar" aria-valuenow="${progressPct(book, reading)}" aria-valuemin="0" aria-valuemax="100"><span style="width:${progressPct(book, reading)}%"></span></div></div>` : `<div class="row-progress row-progress-empty"><strong>Not started</strong></div>`;
-  return `<article class="book-row" data-open="${book.id}" tabindex="0" aria-label="Open ${escapeHtml(book.title)}">${coverHtml(book, 'row-cover')}<div class="row-main"><h3><button class="row-title-button" type="button">${escapeHtml(book.title)}</button></h3><p>${escapeHtml(book.authors || 'Unknown author')}</p><span class="pill ${book.status}">${labels[book.status] || 'Book'}</span>${book.rating != null ? `<span class="row-rating" aria-label="Your rating: ${book.rating} out of 10">★ ${book.rating}/10</span>` : ''}</div>${progress}<div class="row-action">${active ? `<button class="row-update" type="button" data-progress="${book.id}" aria-label="Update progress for ${escapeHtml(book.title)}">Update <span aria-hidden="true">↗</span></button>` : '<span aria-hidden="true">→</span>'}</div></article>`;
+  return `<article class="book-row" data-open="${book.id}" tabindex="0" aria-label="Open ${escapeHtml(book.title)}">${coverHtml(book, 'row-cover')}<div class="row-main"><h3><button class="row-title-button" type="button">${escapeHtml(book.title)}</button></h3><p>${escapeHtml(book.authors || 'Unknown author')}</p>${book.rating != null ? `<span class="row-rating" aria-label="Your rating: ${book.rating} out of 10">★ ${book.rating}/10</span>` : ''}</div>${progress}<div class="row-action">${active ? `<button class="row-update" type="button" data-progress="${book.id}" aria-label="Update progress for ${escapeHtml(book.title)}">Update <span aria-hidden="true">↗</span></button>` : '<span aria-hidden="true">→</span>'}</div></article>`;
 }
 function renderLibrary() {
+  const root = $('#library-books');
+  if (!state.librarySearching) {
+    $$('[data-library-section]', root).forEach(section => {
+      if (section.open) state.collapsedLibrarySections.delete(section.dataset.librarySection);
+      else state.collapsedLibrarySections.add(section.dataset.librarySection);
+    });
+  }
   const term = $('#library-search').value.trim().toLocaleLowerCase('en');
-  let rows = state.books.filter(({book}) => (state.filter === 'all' || book.status === state.filter) && `${book.title} ${book.authors} ${book.tags}`.toLocaleLowerCase('en').includes(term));
+  state.librarySearching = Boolean(term);
+  let rows = state.books.filter(({book}) => `${book.title} ${book.authors} ${book.tags}`.toLocaleLowerCase('en').includes(term));
   const sort = $('#library-sort').value;
   if (sort === 'recent') rows = rows.sort((a, b) => b.book.id - a.book.id);
   if (sort === 'title') rows = rows.sort((a, b) => a.book.title.localeCompare(b.book.title, 'en'));
   if (sort === 'author') rows = rows.sort((a, b) => a.book.authors.localeCompare(b.book.authors, 'en'));
   $('#library-count').textContent = `${rows.length} ${rows.length === 1 ? 'book' : 'books'}`;
-  $('#library-books').innerHTML = rows.length ? rows.map(bookRow).join('') : empty('No books here', term || state.filter !== 'all' ? 'Try another search or filter.' : 'Add a book from the catalog or create one manually.', '<a class="secondary-button" href="#browse">Find books</a>');
+  if (!rows.length && (term || !state.books.length)) {
+    root.innerHTML = empty('No books here', term ? 'Try another title, author, or tag.' : 'Add a book from the catalog or create one manually.', '<a class="secondary-button" href="#browse">Find books</a>');
+    return;
+  }
+  root.innerHTML = ['reading', 'paused', 'want', 'completed', 'abandoned'].map(status => {
+    const books = rows.filter(({book}) => book.status === status);
+    if (!books.length && (term || status === 'abandoned')) return '';
+    const open = term || !state.collapsedLibrarySections.has(status);
+    const count = `${books.length} ${books.length === 1 ? 'book' : 'books'}`;
+    return `<details class="library-section" data-library-section="${status}" ${open ? 'open' : ''}><summary><h2><span>${labels[status]}</span><span class="library-section-count" aria-label="${count}">${books.length}</span><svg class="library-section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></h2></summary><div class="book-list">${books.length ? books.map(bookRow).join('') : `<p class="library-section-empty">${{reading:'No books currently reading.',paused:'No paused books.',want:'No books planned yet.',completed:'No finished books yet.'}[status]}</p>`}</div></details>`;
+  }).join('');
 }
 function navigate() {
   const previousView = state.view;
@@ -747,7 +768,6 @@ $('#page-count-form').addEventListener('submit', async e => {
 $('#skip-pages').addEventListener('click', () => { if (state.pendingEdition) createImportedBook({...state.pendingEdition, page_count: null}); });
 $('#progress-form').addEventListener('submit', async e => { e.preventDefault(); const data = Object.fromEntries(new FormData(e.currentTarget)); const payload = {value:Number(data.value),note:data.note,recorded_at:data.recorded_at}; const rid = state.progressEdit?.reading_id ?? state.selected.readings[0].reading.id; try { await (state.progressEdit ? library.editProgress(state.progressEdit.id, payload) : library.addProgress(rid, payload)); $('#progress-dialog').close(); state.selected = await library.get(state.selected.book.id); await refresh(); renderDetail(); openDialog($('#detail-dialog')); notify('Progress saved'); } catch(err) { notify(err.message,true); } });
 $('#library-search').addEventListener('input',renderLibrary); $('#library-sort').addEventListener('change',renderLibrary);
-$('#library-filters').addEventListener('click',e => { const b=e.target.closest('[data-filter]'); if(!b)return; state.filter=b.dataset.filter; $$('[data-filter]').forEach(x=>x.classList.toggle('active',x===b)); renderLibrary(); });
 $('#filter-toggle').addEventListener('click', () => {
   const toggle = $('#filter-toggle');
   toggle.setAttribute('aria-expanded', toggle.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
@@ -811,4 +831,8 @@ document.addEventListener('error', event => {
     if (event.target.nextElementSibling) event.target.nextElementSibling.hidden = false;
   }
 }, true);
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => fitRecommendationTopics($('#home-recommend-books'))).observe($('#home-recommend-books'));
+}
+document.fonts?.ready.then(() => fitRecommendationTopics($('#home-recommend-books')));
 window.addEventListener('hashchange',navigate); initRecommendations(); navigate(); refresh().catch(e=>notify(e.message,true));

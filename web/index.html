@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f7f9fb">
   <title>BookLib — My library</title>
-  <link rel="stylesheet" href="/style.css?v=58">
+  <link rel="stylesheet" href="/style.css?v=60">
   <script type="module" src="/app.js"></script>
 </head>
 <body>
@@ -20,10 +20,9 @@
         </section>
         <section id="view-stats" class="view" hidden><div class="page-heading compact"><h1>Reading insights</h1><p>Your reading, a little more clearly.</p></div>          <section class="summary-section"><div class="summary-content"><div id="stats" class="stats-grid"></div><div class="activity-section"><div class="activity-heading"><h3>Reading activity</h3><span id="activity-summary"></span></div><div class="activity-scroll"><div id="activity-months" class="activity-months"></div><div class="activity-chart"><div class="activity-weekdays" aria-hidden="true"><span>Sun</span><span>Tue</span><span>Thu</span></div><div id="activity-grid" class="activity-grid" role="group" aria-label="Pages read by day in the last 12 months"></div></div></div><div class="activity-legend"><span>0 pages</span><i class="activity-level-0" title="0 pages"></i><i class="activity-level-1" title="1–9 pages"></i><i class="activity-level-2" title="10–24 pages"></i><i class="activity-level-3" title="25–49 pages"></i><i class="activity-level-4" title="50+ pages"></i><span>50+ pages</span></div></div></div></section><div class="stats-data"><button id="backup-open" class="secondary-button" type="button">My data</button></div></section>
         <section id="view-biblioteca" class="view" hidden>
-          <div class="page-heading compact"><h1>Your library</h1><p>Your full library, including finished books and books you have yet to start.</p></div>
+          <div class="page-heading compact"><h1>Your library</h1><p>Organized by reading status. Open or close each section to explore your books.</p></div>
           <div class="toolbar"><label class="search-field"><span>⌕</span><input id="library-search" type="search" placeholder="Search title, author, or tag…" autocomplete="off" aria-label="Search your library"></label><select id="library-sort" aria-label="Sort books"><option value="recent">Recently added</option><option value="title">Title A–Z</option><option value="author">Author A–Z</option></select></div>
-          <div class="filter-row" id="library-filters" aria-label="Filter by status"><button type="button" data-filter="all" class="active">All</button><button type="button" data-filter="reading">Reading</button><button type="button" data-filter="want">Want to read</button><button type="button" data-filter="paused">Paused</button><button type="button" data-filter="completed">Finished</button></div>
-          <p id="library-count" class="result-count"></p><div id="library-books" class="book-list"></div>
+          <p id="library-count" class="result-count" role="status"></p><div id="library-books" class="library-sections"></div>
         </section>
         <section id="view-browse" class="view" hidden>
           <div class="page-heading compact"><h1>Browse</h1></div>
